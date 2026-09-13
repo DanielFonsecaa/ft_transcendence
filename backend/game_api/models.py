@@ -1,5 +1,6 @@
 import uuid
 import random
+import string
 
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
@@ -12,6 +13,15 @@ from django.utils import timezone
 def avatar_upload_to(instance, filename):
     ext = filename.rsplit('.', 1)[-1].lower()
     return f'avatars/{instance.public_id}.{ext}'
+
+JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+JOIN_CODE_LENGTH = 4
+
+def generate_code():
+    while True:
+        code = ''.join(random.choices(JOIN_CODE_ALPHABET, k=JOIN_CODE_LENGTH))
+        if not Game.objects.filter(join_code=code).exists():
+            return code
 
 
 # --- Enums -------------------------------------------------------------
@@ -220,8 +230,8 @@ class Game(models.Model):
     tournament_round = models.PositiveSmallIntegerField(blank=True, null=True)
     status = models.CharField(max_length=15, choices=GameStatus.choices, default=GameStatus.PENDING)
     mode = models.CharField(max_length=32, blank=True)
-    name = models.CharField(max_length=100, blank=True, default="")
-    join_code = models.CharField(max_length=10, unique=True, db_index=True, blank=True, null=True)
+    name = models.CharField(max_length=64, blank=True, default="")
+    join_code = models.CharField(max_length=10, unique=True, db_index=True, default=generate_code)
     max_seats = models.PositiveSmallIntegerField(validators=[MinValueValidator(2), MaxValueValidator(10)])
     starting_hand_size = models.PositiveSmallIntegerField()
     turn_timer_seconds = models.PositiveIntegerField(blank=True, null=True)
