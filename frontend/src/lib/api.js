@@ -21,7 +21,7 @@ async function ensureCsrfCookie() {
 // DRF errors show up in a few shapes: {detail: "..."}, {message: "..."}, or
 // per-field validation errors like {password1: ["too short", "too common"]}.
 // Surface whatever's actually there instead of a generic status message.
-function extractErrorMessage(data, status) {
+export function extractErrorMessage(data, status) {
   if (data && typeof data === "object") {
     if (typeof data.detail === "string") return data.detail;
     if (typeof data.message === "string") return data.message;

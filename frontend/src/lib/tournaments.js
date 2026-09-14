@@ -9,12 +9,14 @@ export const STATUS_LABELS = {
 	pending: "Upcoming",
 	in_progress: "In progress",
 	finished: "Finished",
+	cancelled: "Canceled",
 }
 
 export const STATUS_COLORS = {
 	pending: "text-blue",
 	in_progress: "text-green",
 	finished: "text-white/50",
+	cancelled: "text-red",
 }
 
 export function makeTournamentId(length = 4) {

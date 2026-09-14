@@ -52,6 +52,8 @@ function Room() {
 			setGame(null)
 		} else if (data.type === "game_state") {
 			// The payload type flipping IS the "game started" signal.
+			if (data.state === null)
+				return
 			setGame(data)
 		} else if (data.type === "error") {
 			setError(data.message)
