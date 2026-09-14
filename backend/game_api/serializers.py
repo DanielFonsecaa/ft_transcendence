@@ -96,15 +96,14 @@ class GamePlayerSerializer(serializers.ModelSerializer):
 
 class GameListSerializer(serializers.ModelSerializer):
 	host = PublicProfileSerializer(read_only=True)
-	player_count = serializers.SerializerMethodField()
+	player_count = serializers.IntegerField(source='players.count', read_only=True)
+	spectator_count = serializers.IntegerField(source='spectators.count', read_only=True)
 
 	class Meta:
 		model = Game
-		fields = ("public_id", "host", "status", "mode", "max_seats", "player_count", *_MODIFIER_FIELDS, "created_at")
+		fields = ("public_id", "join_code", "name", "host", "status", "mode", "max_seats", "allow_spectators", "spectator_count", "player_count", *_MODIFIER_FIELDS, "created_at")
 		read_only_fields = fields
 
-	def get_player_count(self, game):
-		return game.players.count()
 
 class GameDetailSerializer(GameListSerializer):
 	players = GamePlayerSerializer(many=True, read_only=True)
@@ -117,8 +116,12 @@ class GameDetailSerializer(GameListSerializer):
 class GameCreateSerializer(serializers.ModelSerializer):
 	class Meta:
 		model = Game
-		fields = ("mode", "max_seats", "starting_hand_size", "turn_timer_seconds", *_MODIFIER_FIELDS)
+		fields = ("name", "mode", "max_seats", "starting_hand_size", "turn_timer_seconds", "allow_spectators", *_MODIFIER_FIELDS)
 		extra_kwargs = {"max_seats": {"default": 4}, "starting_hand_size": {"default": 7}}
+
+	def create(self, validated_data):
+		user = self.context["request"].user
+		return Game.objects.create(host=user, **validated_data)
 
 class MatchHistoryEntrySerializer(serializers.ModelSerializer):
 	players = GamePlayerSerializer(many=True, read_only=True)
