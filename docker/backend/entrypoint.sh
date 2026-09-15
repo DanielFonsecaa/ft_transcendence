@@ -52,13 +52,6 @@ python manage.py migrate
 echo "[entrypoint] Collect static"
 python manage.py collectstatic --noinput
 
-<<<<<<< Updated upstream
-echo "[entrypoint] Starting Uvicorn"
-exec uvicorn core.asgi:application \
-    --host 0.0.0.0 \
-    --port 8000 \
-    --reload
-=======
 case "$(echo "$DJANGO_DEBUG" | tr '[:upper:]' '[:lower:]')" in
 	true|1|yes|on)
 		echo "[entrypoint] Starting Uvicorn (dev: auto-reload)"
@@ -75,4 +68,3 @@ case "$(echo "$DJANGO_DEBUG" | tr '[:upper:]' '[:lower:]')" in
 			--workers "${UVICORN_WORKERS:-4}"
 		;;
 esac
->>>>>>> Stashed changes
