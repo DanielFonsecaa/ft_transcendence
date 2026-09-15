@@ -2,7 +2,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.db.models import Q, Count, Max
 from django.shortcuts import get_object_or_404
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 from rest_framework import generics, viewsets
 from rest_framework.decorators import action
@@ -25,6 +25,15 @@ from .consumers import broadcast_game_update as _broadcast_game_update
 @ensure_csrf_cookie
 def csrf(request):
 	return JsonResponse({'detail': 'CSRF cookie set'})
+
+
+def healthz(request):
+	try:
+		with connection.cursor() as cursor:
+			cursor.execute('SELECT 1')
+	except Exception:
+		return JsonResponse({'status': 'error'}, status=503)
+	return JsonResponse({'status': 'ok'})
 
 class PublicProfileView(generics.RetrieveAPIView):
 	queryset = User.objects.all()
