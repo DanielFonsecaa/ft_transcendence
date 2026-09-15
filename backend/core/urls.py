@@ -14,10 +14,12 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+import re
+
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve
 from game_api.views import csrf, healthz
 
 urlpatterns = [
@@ -33,4 +35,11 @@ urlpatterns = [
 # Not gated on DEBUG: locally nginx serves /media/ from the shared volume and
 # never reaches this, but Render runs this container standalone with nothing
 # else in front of it, so Django has to be the one serving uploaded avatars.
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# static() can't be used for this — it silently returns no routes when DEBUG=False.
+urlpatterns += [
+	re_path(
+		rf'^{re.escape(settings.MEDIA_URL.lstrip("/"))}(?P<path>.*)$',
+		serve,
+		{'document_root': settings.MEDIA_ROOT},
+	),
+]

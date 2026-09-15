@@ -86,7 +86,9 @@ ROOT_URLCONF = 'core.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        # Searched before app templates, so account/email/* here overrides
+        # allauth's (game_api sits after allauth in INSTALLED_APPS and can't).
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -132,6 +134,8 @@ AUTHENTICATION_BACKENDS = [
 ACCOUNT_LOGIN_METHODS = {'username', 'email'}
 ACCOUNT_SIGNUP_FIELDS = ['username*', 'email*', 'password1*', 'password2*']
 ACCOUNT_EMAIL_VERIFICATION = 'optional'
+# Otherwise allauth prefixes every subject with "[<Site.name>] ", i.e. "[example.com] ".
+ACCOUNT_EMAIL_SUBJECT_PREFIX = ''
 ACCOUNT_ADAPTER = 'game_api.adapters.AccountAdapter'
 SOCIALACCOUNT_ADAPTER = 'game_api.adapters.SocialAccountAdapter'
 
@@ -216,7 +220,13 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+# Defining STORAGES replaces Django's defaults wholesale, so 'default' must be
+# listed again — without it every media save (avatar upload, OAuth signup
+# picture) raises InvalidStorageError.
 STORAGES = {
+	'default': {
+		'BACKEND': 'django.core.files.storage.FileSystemStorage',
+	},
 	'staticfiles': {
 		'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
 	},
