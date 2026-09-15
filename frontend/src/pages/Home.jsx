@@ -3,7 +3,7 @@ import { useAuth } from "@/lib/auth.jsx"
 
 const buttonBase = "inline-block rounded-xl px-6 py-3 font-bold transition-transform duration-300 hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
 const primaryButton = `${buttonBase} bg-white text-black hover:rainbow-shadow`
-const secondaryButton = '${buttonBase} border border-border text-white hover:bg-white/10'
+const secondaryButton = `${buttonBase} border border-border text-white hover:bg-white/10`
 
 function Hero() {
 	//className is the convention for the css in tailwind, same as class in css.
