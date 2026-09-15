@@ -57,10 +57,64 @@ function Hero() {
 	)
 }
 
+const HOW_IT_WORKS = [
+	{
+		id: "match",
+		image: "/cards/red/7.png",
+		title: "Match the pile",
+		text: "Play a card sharing a color or a number with the one face up.",
+	},
+	{
+		id: "actions",
+		image: "/cards/blue/reverse.png",
+		title: "Bend the rules",
+		text: "Skips, reverses and draw cards turn a losing hand around fast.",
+	},
+	{
+		id: "call",
+		image: "/cards/wild.png",
+		title: "Call ONE",
+		text: "Down to your last card? Say it or risk the penalty",
+	},
+]
+
+function FeatureCard({ image, title, text }) {
+	return (
+		<li className="flex flex-col items-center gap-3 rounded-xl border border-border bg-card p-6 text-center">
+			<img src={image} alt="" aria-hidden="true" className="h-28 w-auto drop-shadow-lg" />
+			<h3 className="text-lg font-bold text-card-foreground">{title}</h3>
+			<p className="text-sm text-muted-foreground">{text}</p>
+		</li>
+	)
+}
+
+function HowItWorks() {
+	return (
+		<section aria-labelledby="how-heading" className="mx-auto w-full max-w-5xl px-6 pb-20">
+			<h2 id="how-heading" className="mb-8 text-center text-2xl font-bold">
+				How it works
+			</h2>
+			<ul className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+				{HOW_IT_WORKS.map((step) => (
+					<FeatureCard
+						key={step.id}
+						image={step.image}
+						title={step.title}
+						text={step.text}
+					/>
+				))}
+			</ul>
+		</section>
+	)
+}
+
 function Home() {
+	const { user } = useAuth
+
 	return (
 		<div className="flex-1 text-white">
 			<Hero />
+			{!user && <HowItWorks />}
 		</div>
 	)
 }
