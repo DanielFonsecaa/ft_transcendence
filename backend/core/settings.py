@@ -171,6 +171,11 @@ CSRF_COOKIE_SECURE = not DEBUG
 CSRF_TRUSTED_ORIGINS = env.list('DJANGO_CSRF_TRUSTED_ORIGINS', default=[])
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
+# Vercel's rewrites proxy to this backend as a plain external request, so the
+# Host header it sends is Render's own domain, not the public one visitors
+# see. Without this, request.build_absolute_uri() points at Render instead of Vercel
+USE_X_FORWARDED_HOST = True
+
 # Password validation
 # https://docs.djangoproject.com/en/6.1/ref/settings/#auth-password-validators
 
