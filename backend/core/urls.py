@@ -30,5 +30,7 @@ urlpatterns = [
 	path('accounts/', include('allauth.urls')),
 ]
 
-if settings.DEBUG:
-	urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Not gated on DEBUG: locally nginx serves /media/ from the shared volume and
+# never reaches this, but Render runs this container standalone with nothing
+# else in front of it, so Django has to be the one serving uploaded avatars.
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

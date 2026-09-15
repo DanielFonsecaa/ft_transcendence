@@ -67,6 +67,10 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+	# Serves STATIC_ROOT directly from the app process — there's no separate
+	# nginx/CDN in front of Render, so without this /static/ 404s whenever
+	# DEBUG=False (Django's dev static server only runs under DEBUG).
+	'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -212,6 +216,11 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+	'staticfiles': {
+		'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+	},
+}
 
 # Media files (user uploads, e.g. profile avatars)
 # https://docs.djangoproject.com/en/6.1/topics/files/
