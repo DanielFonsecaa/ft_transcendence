@@ -1,0 +1,9 @@
+{
+	"rewrites": [
+		{ "source": "/api/:path*", "destination": "https://one-wla6.onrender.com/api/:path*" },
+		{ "source": "/admin/:path*", "destination": "https://one-wla6.onrender.com/admin/:path*" },
+		{ "source": "/accounts/:path*", "destination": "https://one-wla6.onrender.com/accounts/:path*" },
+		{ "source": "/ws/:path*", "destination": "https://one-wla6.onrender.com/ws/:path*" },
+		{ "source": "/(.*)", "destination": "/index.html" }
+	]
+}
