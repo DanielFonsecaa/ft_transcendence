@@ -178,9 +178,6 @@ export function mockTournament(id) {
 	)
 }
 
-// Turns a config's house rules into "Stacking draw cards · Zero rotate" style
-// chips. The flags sit flat on the config, so this takes the whole object —
-// exactly like enabledRuleLabels() in lib/rooms.js.
 export function enabledHouseRuleLabels(config = {}) {
 	return HOUSE_RULE_TOGGLES.filter((r) => config[r.key]).map((r) => r.label)
 }

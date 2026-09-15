@@ -10,14 +10,8 @@ const WILD_COLORS = ["red", "yellow", "green", "blue"]
 const AUTO_PASS_MS = 1200
 
 function GameTable({ game, send, error }) {
-	// A card waiting on a choice before it can be sent: a colour for a wild, or, for
-	// a 7 under seven swap, whether to swap hands at all ("swap") and then with whom
-	// ("target"). `index` tells two identical cards in the hand apart; `at` is the
-	// moment it was opened.
 	const [pending, setPending] = useState(null) // { card, index, pick: "color" | "swap" | "target", at }
 	const passedFor = useRef(null)
-
-	// Once someone has won, nothing on the table is mine to use any more.
 	const isOver = game.winner_id != null
 	const me = game.players.find((p) => p.player_id === game.your_player_id)
 	const myTurn = !isOver && game.current_player_id === game.your_player_id
@@ -27,39 +21,21 @@ function GameTable({ game, send, error }) {
 	const glow = COLOR_HEX[game.current_color]
 	const hand = me?.hand ?? []
 
-	// Names this exact moment of the game: it changes whenever the turn moves or a
-	// card is drawn, and stays put through updates that change neither (someone
-	// reconnecting, say).
+
 	const moment = `${game.current_player_id}:${game.draw_pile_count}:${hand.length}`
-
-	// My cards can be clicked on my turn, or at any time with jump-in, which lets a
-	// card identical to the top one be played out of turn. Whether a card would
-	// actually play is only shown, never enforced: the server decides.
 	const handEnabled = myTurn || (!isOver && Boolean(game.settings?.jump_in))
-
-	// A choice opened at an earlier moment (my turn ended while the picker was
-	// open, say) is for a move I can no longer make, so it's ignored.
 	const choice = !isOver && pending?.at === moment ? pending : null
 
-	// After drawing, a hand with nothing playable has one move left: pass. With
-	// draw_until_playable the server keeps drawing until a card plays, so this
-	// is really the normal one-card draw coming up empty.
 	const mustPass = myTurn && game.has_drawn_this_turn && !hand.some((card) => canPlay(card, game))
 
-	// Remembering the moment already passed for stops a re-render, or a pass the
-	// server rejected, from sending it a second time.
 	useEffect(() => {
 		if (!mustPass || passedFor.current === moment) return
 		const timer = setTimeout(() => {
-			// `send` returns false when the socket is down; then try again on the next render.
 			if (send({ action: "pass_turn" }) !== false) passedFor.current = moment
 		}, AUTO_PASS_MS)
 		return () => clearTimeout(timer)
 	}, [mustPass, moment, send])
 
-	// Everyone except me sits on the arc, in play order from left to right, so with
-	// direction 1 the turn moves rightwards along it. A spectator isn't a player,
-	// so they see all the players up there.
 	const others = me ? seatOrder(game).slice(1) : game.players
 	const spots = arcPositions(others.length)
 
@@ -74,8 +50,7 @@ function GameTable({ game, send, error }) {
 		if (offersSwap(card, game)) return setPending({ card, index, pick: "swap", at: moment })
 		send({ action: "play_card", card })
 	}
-	// Sends the waiting card with whatever was chosen for it: { chosen_color },
-	// { target_id }, or nothing at all for a 7 played without a swap.
+
 	const finish = (chosen = {}) => {
 		send({ action: "play_card", card: choice.card, ...chosen })
 		setPending(null)
