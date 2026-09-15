@@ -16,10 +16,12 @@ function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setLoading(true);
 
     try {
       await api.post("/auth/login/", { email, password });
@@ -29,6 +31,7 @@ function Login() {
     } catch (err) {
       console.error("Error during login:", err.message);
       setError("Login failed. Please check your credentials and try again.");
+      setLoading(false);
     }
   };
 
@@ -61,9 +64,10 @@ function Login() {
             </div>
             <button
               type="submit"
-              className="block w-full m-auto bg-linear-to-r from-violet-700/60 to-cyan-400/60 px-6 py-2 rounded-sm text-xl cursor-pointer hover:scale-105"
+              disabled={loading}
+              className="block w-full m-auto bg-linear-to-r from-violet-700/60 to-cyan-400/60 px-6 py-2 rounded-sm text-xl cursor-pointer hover:scale-105 disabled:cursor-default disabled:opacity-60 disabled:hover:scale-100"
             >
-              Login with us
+              {loading ? "Logging in…" : "Login with us"}
             </button>
             {error && (
               <p className="bg-red-600 w-fit p-4 rounded-xl mb-4">{error}</p>

@@ -12,6 +12,7 @@ function Register() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -22,6 +23,7 @@ function Register() {
       return;
     }
 
+    setLoading(true);
     try {
       await api.post("/auth/registration/", {
         username,
@@ -32,6 +34,7 @@ function Register() {
       navigate("/login");
     } catch (err) {
       setError(err.message || "Register failed. Please check your details and try again.");
+      setLoading(false);
     }
   };
 
@@ -71,9 +74,10 @@ function Register() {
           </div>
             <button
               onClick={handleSubmit}
-              className="block w-full m-auto bg-linear-to-r from-violet-700/60 to-cyan-400/60 px-6 py-2 rounded-sm text-xl cursor-pointer hover:scale-105"
+              disabled={loading}
+              className="block w-full m-auto bg-linear-to-r from-violet-700/60 to-cyan-400/60 px-6 py-2 rounded-sm text-xl cursor-pointer hover:scale-105 disabled:cursor-default disabled:opacity-60 disabled:hover:scale-100"
             >
-              Register
+              {loading ? "Registering…" : "Register"}
             </button>
             {error && (
               <p className="bg-red-600 w-fit p-4 rounded-xl">{error}</p>
