@@ -21,7 +21,7 @@ from .serializers import (
 	LeaderboardEntrySerializer, MatchHistoryEntrySerializer, UserStatsSerializer, ChatMessageSerializer, ConversationSerializer,
 	TournamentCreateSerializer, TournamentDetailSerializer, TournamentListSerializer, LiveGameSerializer,
 )
-from .consumers import broadcast_game_update as _broadcast_game_update
+from .consumers import broadcast_game_update as _broadcast_game_update, leave_pending_game
 
 @ensure_csrf_cookie
 def csrf(request):
@@ -217,17 +217,12 @@ class GameViewSet(viewsets.GenericViewSet):
 			if game.status != GameStatus.PENDING:
 				raise ValidationError("Can't leave a game that has already started.")
 
-			deleted, _ = GamePlayer.objects.filter(game=game, user=request.user).delete()
-			if deleted == 0:
+			try:
+				game_player = GamePlayer.objects.get(game=game, user=request.user)
+			except GamePlayer.DoesNotExist:
 				raise ValidationError("You're not in this game.")
 
-			if game.host_id == request.user.id:
-				next_up = GamePlayer.objects.filter(game=game).order_by("seat").first()
-				if next_up is not None:
-					game.host = next_up.user
-				else:
-					game.status = GameStatus.CANCELLED
-				game.save(update_fields=["host", "status"])
+			leave_pending_game(game, game_player)
 
 		_broadcast_game_update(game)
 		return Response(status=status.HTTP_204_NO_CONTENT)

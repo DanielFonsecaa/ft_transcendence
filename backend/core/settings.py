@@ -255,6 +255,11 @@ MEDIA_ROOT = env('DJANGO_MEDIA_ROOT', default=str(BASE_DIR / 'media'))
 
 RUN_TASKS_IN_BACKGROUND = env.bool('DJANGO_RUN_TASKS_IN_BACKGROUND', default=True)
 
+# How long a disconnected player's seat is held before the lobby hands off the
+# host (or closes the room, if they were alone) — long enough to survive a
+# page refresh.
+GAME_DISCONNECT_GRACE_SECONDS = env.int('DJANGO_GAME_DISCONNECT_GRACE_SECONDS', default=10)
+
 
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
