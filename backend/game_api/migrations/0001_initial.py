@@ -142,6 +142,19 @@ class Migration(migrations.Migration):
             ],
         ),
         migrations.CreateModel(
+            name='GameSpectator',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('joined_at', models.DateTimeField(auto_now_add=True)),
+                ('game', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='spectators', to='game_api.game')),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='spectating_games', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'ordering': ['joined_at'],
+                'unique_together': {('game', 'user')},
+            },
+        ),
+        migrations.CreateModel(
             name='Tournament',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
