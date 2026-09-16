@@ -202,6 +202,16 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+# Django's default (PBKDF2, 1.5M iterations) costs ~0.2s here and ~2.5s on
+# Render's CPU, which every login and signup paid for. Argon2 is both stronger
+# and an order of magnitude cheaper. PBKDF2 stays listed so existing passwords
+# still verify — Django rewrites each one to Argon2 on its owner's next login.
+PASSWORD_HASHERS = [
+	'game_api.hashers.Argon2Hasher',
+	'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+	'django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher',
+]
+
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
@@ -237,6 +247,13 @@ STORAGES = {
 
 MEDIA_URL = 'media/'
 MEDIA_ROOT = env('DJANGO_MEDIA_ROOT', default=str(BASE_DIR / 'media'))
+
+
+# Background work
+# See game_api.background — threads, not a queue. Tests set this to False so
+# everything stays on one thread.
+
+RUN_TASKS_IN_BACKGROUND = env.bool('DJANGO_RUN_TASKS_IN_BACKGROUND', default=True)
 
 
 # Email
