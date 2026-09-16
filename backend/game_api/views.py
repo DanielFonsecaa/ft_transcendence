@@ -160,7 +160,7 @@ class GameViewSet(viewsets.GenericViewSet):
 		return GameDetailSerializer
 
 	def get_queryset(self):
-		return Game.objects.annotate(annotated_player_count=Count('players'), annotated_spectator_count=Count('spectators'))
+		return Game.objects.all()
 
 	def _resolve(self, code, select_for_update=False):
 		qs = self.get_queryset()
