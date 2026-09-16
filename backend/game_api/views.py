@@ -15,7 +15,7 @@ from game_engine import GameSettings
 from game_engine import start_game as engine_start_game
 from game_engine import state_to_dict
 
-from .models import Friendship, FriendshipStatus, User, Game, GamePlayer, GameStatus, Conversation, Tournament, TournamentParticipant, MODIFIER_FIELDS
+from .models import Friendship, FriendshipStatus, User, Game, GamePlayer, GameSpectator, GameStatus, Conversation, Tournament, TournamentParticipant, MODIFIER_FIELDS
 from .serializers import (
 	FriendshipSerializer, FriendshipTargetSerializer, PublicProfileSerializer, GameCreateSerializer, GameDetailSerializer, GameListSerializer,
 	LeaderboardEntrySerializer, MatchHistoryEntrySerializer, UserStatsSerializer, ChatMessageSerializer, ConversationSerializer,
@@ -198,13 +198,31 @@ class GameViewSet(viewsets.GenericViewSet):
 			if game.status != GameStatus.PENDING:
 				raise ValidationError("This game has already started or finished.")
 			if GamePlayer.objects.filter(game=game, user=request.user).exists():
-				raise ValidationError("You're already in this game.")
+				raise ValidationError("You're already in this game as a player.")
 			taken = set(game.players.values_list("seat", flat=True))
 			seat = next((i for i in range(game.max_seats) if i not in taken), None)
 			if seat is None:
 				raise ValidationError("This game is full")
 
 			GamePlayer.objects.create(game=game, user=request.user, seat=seat, display_name=getattr(request.user, 'display_name', None) or request.user.username)
+		_broadcast_game_update(game)
+		fresh_game = self.get_queryset().get(pk=game.pk)
+		return Response(GameDetailSerializer(fresh_game, context={'request': request}).data)
+
+	@action(detail=True, methods=["post"])
+	def spectate(self, request, code=None):
+		with transaction.atomic():
+			game = self._resolve(code, select_for_update=True)
+
+			if game.status in (GameStatus.CANCELLED, GameStatus.FINISHED):
+				raise ValidationError("Cannot spectate a cancelled or finished game.")
+			if GamePlayer.objects.filter(game=game, user=request.user).exists():
+				raise ValidationError("You're already playing in this game.")
+			if GameSpectator.objects.filter(game=game, user=request.user).exists():
+				raise ValidationError("You're already spectating in this game.")
+
+			GameSpectator.objects.create(game=game, user=request.user)
+
 		_broadcast_game_update(game)
 		fresh_game = self.get_queryset().get(pk=game.pk)
 		return Response(GameDetailSerializer(fresh_game, context={'request': request}).data)
@@ -224,6 +242,16 @@ class GameViewSet(viewsets.GenericViewSet):
 
 			leave_pending_game(game, game_player)
 
+		_broadcast_game_update(game)
+		return Response(status=status.HTTP_204_NO_CONTENT)
+
+	@action(detail=True, methods=["post"])
+	def leave_spectate(self, request, code=None):
+		with transaction.atomic():
+			game = self._resolve(code, select_for_update=True)
+			deleted, _ = GameSpectator.objects.filter(game=game, user=request.user).delete()
+			if deleted == 0:
+				raise ValidationError("You are not spectating this game.")
 		_broadcast_game_update(game)
 		return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -295,13 +323,13 @@ class LeaderboardView(generics.ListAPIView):
 
 	def get_queryset(self):
 		return (
-			User.objects.annotate(
+			User.objects.filter(is_active=True, deleted_at__isnull=True)
+			.annotate(
 				games_played_count=Count(
 					"game_seats", filter=Q(game_seats__game__status=GameStatus.FINISHED), distinct=True
 				),
 				games_won_count=Count("games_won", distinct=True),
 			)
-			.filter(games_played_count__gt=0)
 			.order_by("-games_won_count", "-games_played_count", "username")
 		)
 
@@ -346,8 +374,10 @@ class GameChatHistoryView(generics.ListAPIView):
 
 	def get_queryset(self):
 		game = get_object_or_404(Game, public_id=self.kwargs["public_id"])
-		if not GamePlayer.objects.filter(game=game, user=self.request.user).exists():
-			raise PermissionDenied("Not a participant in this game.")
+		is_player = GamePlayer.objects.filter(game=game, user=self.request.user).exists()
+		is_spectator = GameSpectator.objects.filter(game=game, user=self.request.user).exists()
+		if not (is_player or is_spectator):
+			raise PermissionDenied("Not a participant or spectator in this game.")
 		return game.chat_messages.select_related("user").order_by("-created_at")
 
 class TournamentViewSet(viewsets.GenericViewSet):
