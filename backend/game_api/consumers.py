@@ -103,11 +103,10 @@ class GameConsumer(WebsocketConsumer):
 		self.accept()
 
 		with transaction.atomic():
-			game = Game.objects.select_for_update().get(pk=self.game.pk)
+			game = Game.objects.select_for_update().get(pk=self.game_id)
 			game, _ = self._expire_overdue_turn(game)
-		self.game = game
 
-		broadcast_game_update(self.game)
+		broadcast_game_update(game)
 
 	def disconnect(self, close_code):
 		if getattr(self, "is_done", True):
@@ -129,7 +128,7 @@ class GameConsumer(WebsocketConsumer):
 			pass
 
 	def receive(self, text_data):
-		if getattr(self, "is_done", True):
+		if getattr(self, "is_done", False):
 			return
 
 		try:
@@ -148,15 +147,12 @@ class GameConsumer(WebsocketConsumer):
 			self._send_error("You must take a seat to play.")
 			return
 
-		with transaction.atomic():
-			game = Game.objects.select_for_update().get(pk=self.game.pk)
-			game, expired = self._expire_overdue_turn(game)
-		if expired:
-			broadcast_game_update(game)
-
+		expired = False
 		try:
 			with transaction.atomic():
 				game = Game.objects.select_for_update().get(pk=self.game_id)
+				game, expired = self._expire_overdue_turn(game)
+
 				if game.state is None or game.status != GameStatus.IN_PROGRESS:
 					self._send_error("This game hasn't started yet.")
 					return
@@ -178,6 +174,7 @@ class GameConsumer(WebsocketConsumer):
 					return
 
 				game.state = state_to_dict(new_state)
+				game.turn_started_at = timezone.now()
 				if new_state.winner_id is not None:
 					game.status = GameStatus.FINISHED
 					game.finished_at = timezone.now()
@@ -187,16 +184,20 @@ class GameConsumer(WebsocketConsumer):
 					ranked = sorted(new_state.players, key=lambda p: len(p.hand))
 					for position, ranked_player in enumerate(ranked, start=1):
 						GamePlayer.objects.filter(pk=int(ranked_player.player_id)).update(finish_position=position)
-					game.save(update_fields=["state", "status", "finished_at", "winner"])
+					game.save(update_fields=["state", "status", "turn_started_at", "finished_at", "winner"])
 					if game.tournament_id is not None:
 						tournament = Tournament.objects.select_for_update().get(pk=game.tournament_id)
 						tournament.maybe_advance(game.tournament_round)
 				else:
-					game.save(update_fields=["state"])
+					game.save(update_fields=["state", "turn_started_at"])
 		except (IllegalMove, GameOver) as exc:
+			if expired:
+				broadcast_game_update(game)
 			self._send_error(str(exc))
 			return
 		except (KeyError, ValueError, StopIteration):
+			if expired:
+				broadcast_game_update(game)
 			self._send_error("Malformed action.")
 			return
 
