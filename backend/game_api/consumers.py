@@ -211,12 +211,40 @@ class GameConsumer(WebsocketConsumer):
 		self.send(text_data=json.dumps({"type": "error", "message": message}))
 
 	def _personalized_state(self):
-		game = self.game
+		game = Game.objects.select_related("host", "winner").get(pk=self.game_id)
+		player = GamePlayer.objects.filter(game=game, user=self.user).first()
+		is_spectator = player is None
+
+		if game.status == GameStatus.PENDING:
+			player_by_seat = {p.seat_index: p for p in game.players.select_related("user").all()}
+			seats = []
+			for i in range(game.max_seats):
+				p = player_by_seat.get(i)
+				if p:
+					seats.append({"seat_index": p.seat_index, "user": {"public_id": str(p.user.public_id), "username": p.user.username,}, "is_connected": p.is_connected,})
+				else:
+					seats.append(None)
+
+			return {
+				"type": "lobby",
+				"status": game.status,
+				"host": game.host.username,
+				"seats": seats,
+				"settings": {
+					"max_seats": game.max_seats,
+					"turn_timer_seconds": game.turn_timer_seconds,
+					"allow_spectators": game.allow_spectators,
+				},
+				"spectators": spectators.spectator_count(game.pk),
+				"your_seat": player.seat_index if player else None,
+				"you_are_spectating": is_spectator,
+			}
+
 		if game.state is None:
 			return {"type": "game_state", "status": game.status, "state": None}
 
 		state = state_from_dict(game.state)
-		my_player_id = str(self.game_player.pk) if self.game_player is not None else None
+		my_player_id = str(player.pk) if player else None
 		connection_by_id = {
 			str(pk): is_connected
 			for pk, is_connected in GamePlayer.objects.filter(game=game).values_list("pk", "is_connected")
@@ -238,7 +266,7 @@ class GameConsumer(WebsocketConsumer):
 			"type": "game_state",
 			"status": game.status,
 			"your_player_id": my_player_id,
-			"is_spectator": self.game_player is None,
+			"you_are_spectating": is_spectator,
 			"spectator_count": spectators.spectator_count(game.pk),
 			"top_card": card_to_dict(state.top_card),
 			"current_color": state.current_color.value,
