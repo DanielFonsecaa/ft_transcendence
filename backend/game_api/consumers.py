@@ -314,7 +314,8 @@ class GameConsumer(WebsocketConsumer):
 			self._send_error("Message is too long.")
 			return
 
-		message = ChatMessage.objects.create(game=self.game, user=self.user, body=body)
+		game = Game.objects.get(pk=self.game_id)
+		message = ChatMessage.objects.create(game=game, user=self.user, body=body)
 		async_to_sync(self.channel_layer.group_send)(self.group_name, {"type": "game.chat", "message": ChatMessageSerializer(message).data})
 
 	def game_chat(self, event):
