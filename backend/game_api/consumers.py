@@ -4,7 +4,7 @@ from asgiref.sync import async_to_sync
 from channels.generic.websocket import WebsocketConsumer
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-from django.db import transaction
+from django.db import transaction, connection
 
 from game_engine import Color, GameOver, IllegalMove, card_from_dict, card_to_dict, draw_card, pass_turn, play_card, state_from_dict, state_to_dict
 
@@ -97,6 +97,9 @@ class GameConsumer(WebsocketConsumer):
 		if player is not None:
 			GamePlayer.objects.filter(pk=player.pk).update(is_connected=True)
 		else:
+			if not game.allow_spectators:
+				self.close()
+				return
 			spectators.register_spectator(self.game_id)
 
 		async_to_sync(self.channel_layer.group_add)(self.group_name, self.channel_name)
@@ -104,9 +107,9 @@ class GameConsumer(WebsocketConsumer):
 
 		with transaction.atomic():
 			game = Game.objects.select_for_update().get(pk=self.game_id)
-			game, _ = self._expire_overdue_turn(game)
-
-		broadcast_game_update(game)
+			if game.status == GameStatus.IN_PROGRESS and game.state is not None:
+				game, _ = self._expire_overdue_turn(game)
+			transaction.on_commit(lambda: broadcast_game_update(game))
 
 	def disconnect(self, close_code):
 		if getattr(self, "is_done", True):
@@ -151,11 +154,12 @@ class GameConsumer(WebsocketConsumer):
 		try:
 			with transaction.atomic():
 				game = Game.objects.select_for_update().get(pk=self.game_id)
-				game, expired = self._expire_overdue_turn(game)
 
-				if game.state is None or game.status != GameStatus.IN_PROGRESS:
+				if game.status != GameStatus.IN_PROGRESS or game.state is None:
 					self._send_error("This game hasn't started yet.")
 					return
+
+				game, expired = self._expire_overdue_turn(game)
 
 				state = state_from_dict(game.state)
 				player_id = str(player.pk)
@@ -190,6 +194,7 @@ class GameConsumer(WebsocketConsumer):
 						tournament.maybe_advance(game.tournament_round)
 				else:
 					game.save(update_fields=["state", "turn_started_at"])
+				transaction.on_commit(lambda: broadcast_game_update(game))
 		except (IllegalMove, GameOver) as exc:
 			if expired:
 				broadcast_game_update(game)
@@ -201,7 +206,6 @@ class GameConsumer(WebsocketConsumer):
 			self._send_error("Malformed action.")
 			return
 
-		broadcast_game_update(game)
 
 	def game_update(self, event):
 		if getattr(self, "is_done", False):
@@ -217,12 +221,12 @@ class GameConsumer(WebsocketConsumer):
 		is_spectator = player is None
 
 		if game.status == GameStatus.PENDING:
-			player_by_seat = {p.seat_index: p for p in game.players.select_related("user").all()}
+			player_by_seat = {p.seat: p for p in game.players.select_related("user").all()}
 			seats = []
 			for i in range(game.max_seats):
 				p = player_by_seat.get(i)
 				if p:
-					seats.append({"seat_index": p.seat_index, "user": {"public_id": str(p.user.public_id), "username": p.user.username,}, "is_connected": p.is_connected,})
+					seats.append({"seat_index": p.seat, "user": {"public_id": str(p.user.public_id), "username": p.user.username,}, "is_connected": p.is_connected,})
 				else:
 					seats.append(None)
 
@@ -237,15 +241,16 @@ class GameConsumer(WebsocketConsumer):
 					"allow_spectators": game.allow_spectators,
 				},
 				"spectators": spectators.spectator_count(game.pk),
-				"your_seat": player.seat_index if player else None,
+				"your_seat": player.seat if player else None,
 				"you_are_spectating": is_spectator,
+				"is_spectator": is_spectator,
 			}
 
 		if game.state is None:
-			return {"type": "game_state", "status": game.status, "state": None}
+			return {"type": "game_state", "status": game.status, "state": None, "is_spectator": is_spectator}
 
 		state = state_from_dict(game.state)
-		my_player_id = str(player.pk) if player else None
+		my_player_id = str(player.pk) if player is not None else None
 		connection_by_id = {
 			str(pk): is_connected
 			for pk, is_connected in GamePlayer.objects.filter(game=game).values_list("pk", "is_connected")
@@ -268,6 +273,7 @@ class GameConsumer(WebsocketConsumer):
 			"status": game.status,
 			"your_player_id": my_player_id,
 			"you_are_spectating": is_spectator,
+			"is_spectator": is_spectator,
 			"spectator_count": spectators.spectator_count(game.pk),
 			"top_card": card_to_dict(state.top_card),
 			"current_color": state.current_color.value,
