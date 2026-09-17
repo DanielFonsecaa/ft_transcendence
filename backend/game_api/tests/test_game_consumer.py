@@ -3,6 +3,7 @@ from channels.testing import WebsocketCommunicator
 from django.contrib.auth import BACKEND_SESSION_KEY, HASH_SESSION_KEY, SESSION_KEY, get_user_model
 from django.contrib.sessions.backends.db import SessionStore
 from django.test import TransactionTestCase, override_settings
+from django.db import connection
 
 from core.asgi import application
 from ..models import Game, GamePlayer, GameStatus
@@ -11,6 +12,15 @@ User = get_user_model()
 
 IN_MEMORY_LAYER = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
+async def drain_on_commit():
+	def _drain():
+		while connection.run_on_commit:
+			callbacks = connection.run_on_commit
+			connection.run_on_commit = []
+			for _, callback in callbacks:
+				callback()
+
+	await sync_to_async(_drain)()
 
 def _session_cookie_for(user):
 	session = SessionStore()
@@ -28,6 +38,7 @@ async def _connect_to_game(user, game):
 		headers=[(b"cookie", f"sessionid={session_key}".encode())],
 	)
 	connected, _ = await communicator.connect()
+	await drain_on_commit()
 	return communicator, connected
 
 
@@ -163,6 +174,7 @@ class GameplayTests(TransactionTestCase):
 			"card": card_to_play,
 			"chosen_color": "red",
 		})
+		await drain_on_commit()
 
 		alice_update = await alice_comm.receive_json_from()
 		bob_update = await bob_comm.receive_json_from()
@@ -189,6 +201,7 @@ class GameplayTests(TransactionTestCase):
 		not_current_comm = bob_comm if current_id == str(alice_gp.pk) else alice_comm
 
 		await not_current_comm.send_json_to({"action": "draw_card"})
+		await drain_on_commit()
 
 		response = await not_current_comm.receive_json_from()
 		self.assertEqual(response["type"], "error")
@@ -211,6 +224,8 @@ class GameplayTests(TransactionTestCase):
 		await alice_comm.receive_json_from()
 
 		await alice_comm.send_json_to({"action": "draw_card"})
+		await drain_on_commit()
+
 		response = await alice_comm.receive_json_from()
 		self.assertEqual(response["type"], "error")
 
@@ -225,6 +240,8 @@ class GameplayTests(TransactionTestCase):
 		await communicator.receive_json_from()
 
 		await communicator.send_json_to({"action": "play_card"})
+		await drain_on_commit()
+
 		response = await communicator.receive_json_from()
 		self.assertEqual(response["type"], "error")
 
