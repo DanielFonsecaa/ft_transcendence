@@ -203,7 +203,8 @@ class GameConsumer(WebsocketConsumer):
 		broadcast_game_update(game)
 
 	def game_update(self, event):
-		self.game = Game.objects.select_related("host", "winner").get(pk=self.game.pk)
+		if getattr(self, "is_done", False):
+			return
 		self.send(text_data=json.dumps(self._personalized_state()))
 
 	def _send_error(self, message):
