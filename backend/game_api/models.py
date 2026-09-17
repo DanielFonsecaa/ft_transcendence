@@ -248,6 +248,16 @@ class Game(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(blank=True, null=True)
 
+    @classmethod
+    def _resolve(cls, code_or_id, queryset=None):
+        qs = queryset if queryset is not None else cls.objects
+        try:
+            val = uuid.UUID(str(code_or_id))
+            return qs.get(public_id=val)
+        except (ValueError, TypeError, AttributeError):
+            pass
+        return qs.get(join_code__iexact=code_or_id)
+
     def __str__(self):
         return f'Game {self.public_id}'
 

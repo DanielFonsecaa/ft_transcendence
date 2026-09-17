@@ -1,5 +1,5 @@
 import uuid
-from django.http import JsonResponse
+from django.http import JsonResponse, Http404
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.db.models import Q, Count, Max
 from django.shortcuts import get_object_or_404
@@ -168,11 +168,10 @@ class GameViewSet(viewsets.GenericViewSet):
 			qs = qs.select_for_update()
 
 		try:
-			val = uuid.UUID(code)
-			return get_object_or_404(qs, public_id=val)
-		except (ValueError, TypeError, AttributeError):
-			pass
-		return get_object_or_404(qs, join_code__iexact=code)
+			return Game._resolve(code, queryset=qs)
+		except Game.DoesNotExist:
+			raise Http404
+
 
 	def list(self, request):
 		games = [g for g in self.get_queryset().filter(status=GameStatus.PENDING) if g.players.count() < g.max_seats]
