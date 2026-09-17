@@ -81,31 +81,26 @@ class GameConsumer(WebsocketConsumer):
 			self.close()
 			return
 
-		public_id = self.scope["url_route"]["kwargs"]["public_id"]
+		self.is_done = False
+		code_or_id = self.scope["url_route"]["kwargs"]["code_or_id"]
 		try:
-			game = Game.objects.get(public_id=public_id)
-		except Game.DoesNotExist:
+			game = Game._resolve(code_or_id)
+		except (Game.DoesNotExist, ValueError):
 			self.close()
 			return
 
 		self.user = user
-		self.game = game
+		self.game_id = game.pk
 		self.group_name = f"game_{game.pk}"
 
-		try:
-			self.game_player = GamePlayer.objects.select_related("user").get(game=game, user=user)
-			self.is_spectator = False
-		except GamePlayer.DoesNotExist:
-			self.game_player = None
-			self.is_spectator = True
+		player = GamePlayer.objects.filter(game_id=self.game_id, user=user).first()
+		if player is not None:
+			GamePlayer.objects.filter(pk=player.pk).update(is_connected=True)
+		else:
+			spectators.register_spectator(self.game_id)
 
 		async_to_sync(self.channel_layer.group_add)(self.group_name, self.channel_name)
 		self.accept()
-
-		if self.is_spectator:
-			spectators.register_spectator(game.pk)
-		else:
-			GamePlayer.objects.filter(pk=self.game_player.pk).update(is_connected=True)
 
 		with transaction.atomic():
 			game = Game.objects.select_for_update().get(pk=self.game.pk)
@@ -115,20 +110,26 @@ class GameConsumer(WebsocketConsumer):
 		broadcast_game_update(self.game)
 
 	def disconnect(self, close_code):
-		is_spectator = getattr(self, "is_spectator", None)
-		if is_spectator is None:
+		if getattr(self, "is_done", True):
 			return
+		self.is_done = True
 
 		async_to_sync(self.channel_layer.group_discard)(self.group_name, self.channel_name)
-		if is_spectator:
-			spectators.unregister_spectator(self.game.pk)
+
+		player = GamePlayer.objects.filter(game_id=self.game_id, user=self.user).first()
+		if player is not None:
+			GamePlayer.objects.filter(pk=player.pk).update(is_connected=False)
 		else:
-			GamePlayer.objects.filter(pk=self.game_player.pk).update(is_connected=False)
-		broadcast_game_update(self.game)
+			spectators.unregister_spectator(self.game_id)
+
+		try:
+			game = Game.objects.get(pk=self.game_id)
+			broadcast_game_update(game)
+		except Game.DoesNotExist:
+			pass
 
 	def receive(self, text_data):
-		is_spectator = getattr(self, "is_spectator", None)
-		if is_spectator is None:
+		if getattr(self, "is_done", True):
 			return
 
 		try:
@@ -142,27 +143,26 @@ class GameConsumer(WebsocketConsumer):
 			self._handle_chat(payload)
 			return
 
-		if is_spectator:
-			self._send_error("Spectators can't play.")
+		player = GamePlayer.objects.filter(game_id=self.game_id, user=self.user).first()
+		if player is None:
+			self._send_error("You must take a seat to play.")
 			return
-		game_player = self.game_player
 
 		with transaction.atomic():
 			game = Game.objects.select_for_update().get(pk=self.game.pk)
 			game, expired = self._expire_overdue_turn(game)
 		if expired:
-			self.game = game
 			broadcast_game_update(game)
 
 		try:
 			with transaction.atomic():
-				game = Game.objects.select_for_update().get(pk=self.game.pk)
+				game = Game.objects.select_for_update().get(pk=self.game_id)
 				if game.state is None or game.status != GameStatus.IN_PROGRESS:
 					self._send_error("This game hasn't started yet.")
 					return
 
 				state = state_from_dict(game.state)
-				player_id = str(game_player.pk)
+				player_id = str(player.pk)
 
 				if action == "play_card":
 					card = card_from_dict(payload["card"])
@@ -200,7 +200,6 @@ class GameConsumer(WebsocketConsumer):
 			self._send_error("Malformed action.")
 			return
 
-		self.game = game
 		broadcast_game_update(game)
 
 	def game_update(self, event):
@@ -257,7 +256,7 @@ class GameConsumer(WebsocketConsumer):
 			return game, False
 		if game.turn_started_at is None:
 			return game, False
-		
+
 		elapsed = (timezone.now() - game.turn_started_at).total_seconds()
 		if elapsed < game.turn_timer_seconds:
 			return game, False
