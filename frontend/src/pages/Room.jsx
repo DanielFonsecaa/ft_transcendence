@@ -36,8 +36,11 @@ function Room() {
 		;(async () => {
 			try {
 				const room = await api.get(`/games/${id}/`)
-				const mine = (person) => person?.user?.username === user.username
-				const alreadyIn = room.players.some(mine) || room.spectators.some(mine)
+				// A player arrives nested under `user`; a spectator has `username` on
+				// the row itself. Reading both the same way sent spectators back to
+				// join, which then refused them.
+				const isMe = (person) => (person?.user?.username ?? person?.username) === user.username
+				const alreadyIn = room.players.some(isMe) || room.spectators.some(isMe)
 				if (!alreadyIn) await api.post(`/games/${id}/join/`, {})
 				if (!cancelled) setPublicId(room.public_id)
 			} catch (err) {
@@ -84,7 +87,7 @@ function Room() {
 	const startGame = () => act("start")
 	const leaveRoom = async () => {
 		await act("leave")
-		navigate("/play")
+		navigate("/#rooms")
 	}
 
 	if (error && !lobby && !game) {
@@ -93,7 +96,7 @@ function Room() {
 				<p role="alert" className="mb-4 text-red-400">{error}</p>
 				<button
 					type="button"
-					onClick={() => navigate("/play")}
+					onClick={() => navigate("/#rooms")}
 					className="rounded-lg border border-white px-5 py-2 font-bold cursor-pointer"
 				>
 					Back to rooms

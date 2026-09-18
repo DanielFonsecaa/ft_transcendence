@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route } from 'react-router'
+import { Navigate, Routes, Route } from 'react-router'
 import Layout from '@/components/layout/Layout.jsx'
 import RequireAuth from '@/components/layout/RequireAuth.jsx'
 
@@ -8,10 +8,8 @@ import RequireAuth from '@/components/layout/RequireAuth.jsx'
 const Home = lazy(() => import('@/pages/Home.jsx'))
 const Tournaments = lazy(() => import('@/pages/Tournaments.jsx'))
 const Profile = lazy(() => import('@/pages/Profile.jsx'))
-const Play = lazy(() => import('@/pages/Play.jsx'))
 const Room = lazy(() => import('@/pages/Room.jsx'))
 const TournamentDetail = lazy(() => import('@/pages/TournamentDetail.jsx'))
-const Rules = lazy(() => import('@/pages/Rules.jsx'))
 const Leaderboard = lazy(() => import('@/pages/Leaderboard.jsx'))
 const Login = lazy(() => import('@/pages/Login.jsx'))
 const Friends = lazy(() => import('@/pages/Friends.jsx'))
@@ -39,10 +37,11 @@ function AppRoutes() {
 					<Route path="/" element={<Home />} />
 					<Route path="/tournament" element={<Tournaments />} />
 					<Route path="/leaderboard" element={<Leaderboard />} />
-					<Route path="/play" element={<Play />} />
+					{/* Home is the hub now: these two are sections of it. */}
+					<Route path="/play" element={<Navigate to="/#rooms" replace />} />
 					<Route path="/room/:id" element={<Room />} />
 					<Route path="/tournament/:id" element={<TournamentDetail />} />
-					<Route path="/rules" element={<Rules />} />
+					<Route path="/rules" element={<Navigate to="/#howtoplay" replace />} />
 					<Route path="/login" element={<Login />} />
 					<Route path="/register" element={<Register />} />
 					{/* Signed out, these bounce to the Login and come back after it. */}

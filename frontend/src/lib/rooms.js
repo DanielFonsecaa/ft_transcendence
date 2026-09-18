@@ -1,5 +1,6 @@
-// Shared shape + helpers for game rooms, used by the create-room popup
-// (CreateRoomModal), the room list (Play) and the room page (Room).
+// Shared shape + helpers for game rooms, used by the create-room dialog, the
+// open-rooms list on Home, the enter-code dialog and the room page.
+import api from "./api.js"
 
 // Every setting key here is exactly the field name the backend `Game` model
 // uses (backend/game_api/models.py), so a settings object goes straight into
@@ -46,4 +47,42 @@ export function enabledRuleLabels(source = {}) {
 
 export function hasAnyModifier(source = {}) {
 	return MODIFIER_TOGGLES.some((rule) => source[rule.key])
+}
+
+// The room-code alphabet: A–Z and 2–9, with I, O, 0 and 1 left out because
+// nobody can read them apart when a code is passed on out loud (CONTEXT.md).
+export const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+export const ROOM_CODE_LENGTH = 4
+
+// Pure: keep only characters that could be in a code, uppercased. Used by both
+// typing a character and pasting a whole code.
+export function sanitizeRoomCode(text = "") {
+	return [...text.toUpperCase()].filter((char) => ROOM_CODE_ALPHABET.includes(char)).join("")
+}
+
+export function listRooms() {
+	return api.get("/games/")
+}
+
+export function getRoom(code) {
+	return api.get(`/games/${code}/`)
+}
+
+// The settings keys are already the backend's field names, so the object goes
+// over as it is.
+export function createRoom({ name, settings }) {
+	return api.post("/games/", { name, ...settings })
+}
+
+export function spectateRoom(code) {
+	return api.post(`/games/${code}/spectate/`)
+}
+
+// A room nobody else can sit in: every seat taken, or the game already going.
+export function isRoomFull(room) {
+	return room.player_count >= room.max_seats || room.status !== "pending"
+}
+
+export function canSpectate(room) {
+	return Boolean(room.allow_spectators) && (room.spectator_count ?? 0) < MAX_SPECTATORS
 }

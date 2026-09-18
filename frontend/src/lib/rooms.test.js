@@ -9,7 +9,10 @@ import {
 	MIN_PLAYERS,
 	MIN_TURN_TIMER,
 	MODIFIER_TOGGLES,
+	ROOM_CODE_ALPHABET,
+	ROOM_CODE_LENGTH,
 	RULE_TOGGLES,
+	sanitizeRoomCode,
 } from "./rooms.js"
 
 describe("defaultRoomSettings", () => {
@@ -96,5 +99,29 @@ describe("RULE_TOGGLES", () => {
 			...MODIFIER_TOGGLES.map((toggle) => toggle.key),
 			"allow_spectators",
 		])
+	})
+})
+
+describe("sanitizeRoomCode", () => {
+	it("uppercases what it keeps", () => {
+		expect(sanitizeRoomCode("7f2k")).toBe("7F2K")
+	})
+
+	// I/O and 0/1 are left out of the alphabet on purpose: read a code out loud
+	// with them in and nobody knows which one they heard.
+	it("drops the characters a code can never contain", () => {
+		expect(sanitizeRoomCode("IO01")).toBe("")
+		expect(sanitizeRoomCode("7I2O")).toBe("72")
+	})
+
+	it("drops spaces, punctuation and anything else pasted along", () => {
+		expect(sanitizeRoomCode(" 7f2k \n")).toBe("7F2K")
+		expect(sanitizeRoomCode("code: 7F2K!")).toBe("CDE7F2K")
+	})
+
+	it("keeps every character of the alphabet", () => {
+		expect(sanitizeRoomCode(ROOM_CODE_ALPHABET)).toBe(ROOM_CODE_ALPHABET)
+		expect(ROOM_CODE_ALPHABET).toHaveLength(32)
+		expect(ROOM_CODE_LENGTH).toBe(4)
 	})
 })
