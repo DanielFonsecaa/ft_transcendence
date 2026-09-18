@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react"
 import { Navigate, useNavigate, useParams } from "react-router"
+import ChatDock from "@/components/chat/ChatDock.jsx"
+import { useChatRoom } from "@/components/chat/ChatProvider.jsx"
 import GameHeader from "@/components/game/GameHeader.jsx"
 import GameTable from "@/components/game/GameTable.jsx"
+import TableChat from "@/components/game/TableChat.jsx"
 import Footer from "@/components/layout/Footer.jsx"
 import Header from "@/components/layout/Header.jsx"
 import Lobby from "@/components/room/Lobby.jsx"
@@ -9,6 +12,7 @@ import Button from "@/components/ui/Button.jsx"
 import { ErrorMessage, Loading } from "@/components/ui/Message.jsx"
 import api from "@/lib/api.js"
 import { useAuth } from "@/lib/auth.jsx"
+import { getGameMessages, sortMessages } from "@/lib/chat.js"
 import { useGameSocket } from "@/lib/socket.js"
 
 // Owns the room's connection and decides which view is on screen. The two views
@@ -29,7 +33,16 @@ function Room() {
 	const [lobby, setLobby] = useState(null)
 	const [game, setGame] = useState(null)
 	const [publicId, setPublicId] = useState(null)
+	// The room's own code. The route param can be either a code or a UUID, and the
+	// chat needs the code: an invite message is tagged with it.
+	const [joinCode, setJoinCode] = useState(null)
 	const [error, setError] = useState("")
+	// The table's chat, kept here because this is the file that owns the socket it
+	// rides on. It is not the dock's: those messages come down `ws/chat/`.
+	const [tableMessages, setTableMessages] = useState([])
+	// How many of those came from the history fetch. The panel needs to know, so it
+	// does not badge the conversation you walked in on as unread.
+	const [tableHistoryCount, setTableHistoryCount] = useState(0)
 
 	// Claim a place before opening the socket — the server only lets players and
 	// spectators listen. Doing it here rather than on the Play page means a
@@ -51,7 +64,10 @@ function Room() {
 				const isMe = (person) => (person?.user?.username ?? person?.username) === user.username
 				const alreadyIn = room.players.some(isMe) || room.spectators.some(isMe)
 				if (!alreadyIn) await api.post(`/games/${id}/join/`, {})
-				if (!cancelled) setPublicId(room.public_id)
+				if (!cancelled) {
+					setPublicId(room.public_id)
+					setJoinCode(room.join_code)
+				}
 			} catch (err) {
 				if (!cancelled) setError(err.message)
 			}
@@ -63,7 +79,15 @@ function Room() {
 	}, [id, user])
 
 	const handleMessage = useCallback((data) => {
-		if (data.type === "lobby") {
+		if (data.type === "chat_message") {
+			// Same frame name as the dock's, a different connection: this one is the
+			// room talking to itself.
+			setTableMessages((current) =>
+				current.some((message) => message.id === data.message.id)
+					? current
+					: [...current, data.message],
+			)
+		} else if (data.type === "lobby") {
 			setLobby(data)
 			setGame(null)
 		} else if (data.type === "game_state") {
@@ -77,6 +101,39 @@ function Room() {
 	}, [])
 
 	const { connected, send } = useGameSocket(publicId, handleMessage)
+
+	// What the room is called and whether it can still be joined, so the dock's
+	// "Invite to Play" has something to invite to. `joinable` goes false the moment
+	// a game starts: the server only accepts an invite to a PENDING game.
+	useChatRoom({ gameId: publicId, roomCode: joinCode ?? id, joinable: !game })
+
+	// The game's own chat history, fetched once the game is on screen. It is a
+	// plain GET, not a socket replay: the socket only carries what happens next.
+	useEffect(() => {
+		if (!publicId || !game) return undefined
+		let ignore = false
+
+		void (async () => {
+			try {
+				const history = await getGameMessages(publicId)
+				if (!ignore) {
+					setTableHistoryCount(history.length)
+					setTableMessages((current) => {
+						const seen = new Set(history.map((message) => message.id))
+						return sortMessages([...history, ...current.filter((m) => !seen.has(m.id))])
+					})
+				}
+			} catch {
+				/* no history is not a reason to take the chat away */
+			}
+		})()
+
+		return () => {
+			ignore = true
+		}
+		// Only the first payload matters: the history does not change under us.
+		// oxlint-disable-next-line react-hooks/exhaustive-deps
+	}, [publicId, Boolean(game)])
 
 	if (!user) return <Navigate to="/login" replace state={{ from: `/room/${id}` }} />
 
@@ -108,6 +165,15 @@ function Room() {
 				<main className="flex min-h-0 flex-1 flex-col">
 					<GameTable game={game} send={send} error={error} roomCode={id} />
 				</main>
+				<TableChat
+					roomCode={id}
+					messages={tableMessages}
+					players={game.players?.length ?? 0}
+					myPublicId={user.public_id}
+					historyCount={tableHistoryCount}
+					onSend={(body) => send({ action: "chat", body })}
+				/>
+				<ChatDock />
 			</div>
 		)
 	}
@@ -140,6 +206,7 @@ function Room() {
 				)}
 			</main>
 			<Footer />
+			<ChatDock />
 		</div>
 	)
 }

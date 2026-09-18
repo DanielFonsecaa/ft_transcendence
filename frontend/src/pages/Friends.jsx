@@ -96,26 +96,20 @@ function Friends() {
 			count={friends.length}
 			empty="No friends yet - add someone above."
 		>
+			{/* The only section with live actions, so the only one where Remove and
+			    Block move into the ⋮ — see FriendRow. */}
 			{friends.map(({ id, person }) => (
-				<FriendRow key={id} person={person} accent="green" busy={busyId === id}>
-					<Button
-						variant="small"
-						disabled={busyId === id}
-						onClick={() => act(id, () => removeFriendship(id))}
-						className={ACTION}
-					>
-						Remove
-					</Button>
-					<Button
-						variant="outline"
-						color="red"
-						disabled={busyId === id}
-						onClick={() => act(id, () => blockUser(person.username))}
-						className={ACTION}
-					>
-						Block
-					</Button>
-				</FriendRow>
+				<FriendRow
+					key={id}
+					person={person}
+					accent="green"
+					busy={busyId === id}
+					chatWith={person.username}
+					menu={[
+						{ label: "Remove friend", color: "dim", onClick: () => act(id, () => removeFriendship(id)) },
+						{ label: "Block", color: "red", onClick: () => act(id, () => blockUser(person.username)) },
+					]}
+				/>
 			))}
 		</FriendSection>
 	)
