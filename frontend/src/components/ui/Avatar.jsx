@@ -6,6 +6,9 @@ const SIZES = {
 	md: "h-12 w-12 text-base",
 	lg: "h-16 w-16 text-xl",
 	xl: "h-[clamp(88px,18vw,120px)] w-[clamp(88px,18vw,120px)] text-4xl",
+	// Added in area 03: a lobby seat and a seat at the table size their own circle
+	// (it follows the arena's height), so the photo just fills whatever it is given.
+	fill: "h-full w-full text-base",
 }
 
 const RINGS = {

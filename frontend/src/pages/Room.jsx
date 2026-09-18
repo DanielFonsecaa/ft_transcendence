@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState } from "react"
 import { Navigate, useNavigate, useParams } from "react-router"
+import GameHeader from "@/components/game/GameHeader.jsx"
 import GameTable from "@/components/game/GameTable.jsx"
+import Footer from "@/components/layout/Footer.jsx"
+import Header from "@/components/layout/Header.jsx"
 import Lobby from "@/components/room/Lobby.jsx"
+import Button from "@/components/ui/Button.jsx"
+import { ErrorMessage, Loading } from "@/components/ui/Message.jsx"
 import api from "@/lib/api.js"
 import { useAuth } from "@/lib/auth.jsx"
 import { useGameSocket } from "@/lib/socket.js"
@@ -9,6 +14,10 @@ import { useGameSocket } from "@/lib/socket.js"
 // Owns the room's connection and decides which view is on screen. The two views
 // (Lobby, GameTable) are dumb by design — they take a payload and hand actions
 // back up, so this is the only file that knows the server exists.
+//
+// It also draws its own frame, which is why this route sits outside Layout: the
+// lobby wants the site header and footer, and the game wants neither. The table
+// gets a slim header of its own and every pixel of the height.
 function Room() {
 	const { id } = useParams()
 	const navigate = useNavigate()
@@ -90,38 +99,48 @@ function Room() {
 		navigate("/#rooms")
 	}
 
-	if (error && !lobby && !game) {
+	// The game takes the whole window and scrolls nowhere: the arena measures itself
+	// against this height, which is what makes the compact arena possible.
+	if (game) {
 		return (
-			<section className="mx-auto w-[min(88vw,860px)] py-10 text-center text-white">
-				<p role="alert" className="mb-4 text-red-400">{error}</p>
-				<button
-					type="button"
-					onClick={() => navigate("/#rooms")}
-					className="rounded-lg border border-white px-5 py-2 font-bold cursor-pointer"
-				>
-					Back to rooms
-				</button>
-			</section>
+			<div className="flex h-dvh flex-col overflow-hidden bg-page">
+				<GameHeader code={id} watching={game.spectator_count ?? 0} />
+				<main className="flex min-h-0 flex-1 flex-col">
+					<GameTable game={game} send={send} error={error} roomCode={id} />
+				</main>
+			</div>
 		)
 	}
 
-	if (!lobby && !game) {
-		return <section className="py-10 text-center text-white/60">Joining room…</section>
-	}
-
-	if (game) return <GameTable game={game} send={send} error={error} />
-
+	// Everything else — the lobby, loading, a failure — sits in the normal frame.
 	return (
-		<Lobby
-			lobby={lobby}
-			user={user}
-			connected={connected}
-			error={error}
-			onSeat={takeSeat}
-			onSpectate={goSpectate}
-			onStart={startGame}
-			onLeave={leaveRoom}
-		/>
+		<div className="flex min-h-dvh flex-col bg-page">
+			<Header />
+			<main className="flex flex-1 flex-col">
+				{error && !lobby ? (
+					<section className="mx-auto flex w-full max-w-[1240px] flex-col items-center gap-5 px-[clamp(16px,4vw,24px)] py-16 text-center">
+						<ErrorMessage boxed>{error}</ErrorMessage>
+						<Button variant="outline" color="yellow" onClick={() => navigate("/#rooms")}>
+							Back to rooms
+						</Button>
+					</section>
+				) : lobby ? (
+					<Lobby
+						lobby={lobby}
+						user={user}
+						connected={connected}
+						error={error}
+						onSeat={takeSeat}
+						onSpectate={goSpectate}
+						onStart={startGame}
+						onLeave={leaveRoom}
+					/>
+				) : (
+					<Loading className="py-16 text-center">Joining room…</Loading>
+				)}
+			</main>
+			<Footer />
+		</div>
 	)
 }
 

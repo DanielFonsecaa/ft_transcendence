@@ -29,3 +29,21 @@ export const COLOR_HEX = {
 	green: "#43a047",
 	blue: "#1e88e5",
 }
+
+// The same card in words, for a screen reader and for the notices: "Blue 7",
+// "Red Skip", "Wild Draw Four". Separate from FACE above, which names the file
+// on disk ("+2", "block") — a filename is not something to read out loud.
+const SPOKEN = {
+	skip: "Skip",
+	reverse: "Reverse",
+	draw_two: "Draw Two",
+	wild: "Wild",
+	wild_draw_four: "Wild Draw Four",
+}
+
+export function cardName(card) {
+	if (!card) return "card"
+	if (card.color === "wild") return SPOKEN[card.card_type] ?? "Wild"
+	const color = card.color.charAt(0).toUpperCase() + card.color.slice(1)
+	return `${color} ${card.card_type === "number" ? card.value : SPOKEN[card.card_type] ?? card.card_type}`
+}

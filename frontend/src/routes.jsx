@@ -39,7 +39,6 @@ function AppRoutes() {
 					<Route path="/leaderboard" element={<Leaderboard />} />
 					{/* Home is the hub now: these two are sections of it. */}
 					<Route path="/play" element={<Navigate to="/#rooms" replace />} />
-					<Route path="/room/:id" element={<Room />} />
 					<Route path="/tournament/:id" element={<TournamentDetail />} />
 					<Route path="/rules" element={<Navigate to="/#howtoplay" replace />} />
 					<Route path="/login" element={<Login />} />
@@ -50,11 +49,16 @@ function AppRoutes() {
 					<Route path="/oauth/callback" element={<OAuthCallback />} />
 					<Route path="/privacy-policy" element={<PrivacyPolicy />} />
 					<Route path="/terms-of-service" element={<TermsOfService />} />
-					{/* Dev only: these are null in a production build, so the routes don't exist there. */}
-					{TablePlayground && <Route path="/dev/table" element={<TablePlayground />} />}
+					{/* Dev only: null in a production build, so the route doesn't exist there. */}
 					{UiPlayground && <Route path="/dev/ui" element={<UiPlayground />} />}
 					<Route path="*" element={<NotFound />} />
 				</Route>
+				{/* Outside Layout on purpose: the room draws its own frame, because the
+				    game table has a slim header of its own and no footer at all. The
+				    playground does the same so it previews the real thing. */}
+				<Route path="/room/:id" element={<Room />} />
+				{/* Dev only: null in a production build, so the route doesn't exist there. */}
+				{TablePlayground && <Route path="/dev/table" element={<TablePlayground />} />}
 			</Routes>
 		</Suspense>
 	)
