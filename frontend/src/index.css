@@ -69,12 +69,6 @@ body {
   color: #ffffff;
 }
 
-/* One visible focus ring for the whole app. */
-:focus-visible {
-  outline: 2px solid var(--color-yellow);
-  outline-offset: 2px;
-}
-
 /* Scroll lock for ui/Dialog: a native <dialog> traps focus but not the wheel. */
 body:has(dialog[open]) {
   overflow: hidden;
