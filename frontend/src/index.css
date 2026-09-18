@@ -1,7 +1,12 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+/* Fonts: Poppins for the logo and big numbers, Baloo 2 for section titles,
+   Archivo for body text, Space Mono for labels and buttons. */
+  --font-sans: "Archivo", Helvetica, ui-sans-serif, system-ui, sans-serif;
+  --font-logo: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --font-title: "Baloo 2", cursive;
+  --font-mono: "Space Mono", ui-monospace, monospace;
   --font-display: "Poppins", ui-sans-serif, system-ui, sans-serif;
 
 /* Card colors*/
@@ -9,6 +14,34 @@
   --color-yellow: #FAB243;
   --color-green: #169A4F;
   --color-blue: #0077B9;
+
+/* Surfaces of the redesign */
+  --color-page: #141414;
+  --color-bar: #101010;
+  --color-panel: #17171B;
+  --color-line: #242424;
+  --color-line-strong: #333333;
+
+/* Text. `muted` replaces the design's #6F6F6F and #7A7A7A: it is the darkest
+   gray that still passes WCAG AA on every background used here, panels too.
+   The `-soft` red and blue are the design's own hover shades, used for small
+   text because #E02130 and #0077B9 only reach 3.8:1 at body sizes. */
+  --color-soft: #E6E6E6;
+  --color-dim: #BDBDBD;
+  --color-muted: #808080;
+  --color-red-soft: #F4606A;
+  --color-blue-soft: #3FA9E0;
+  --color-green-soft: #3FD98A;
+
+/* Hover fills */
+  --color-red-hover: #F0303F;
+  --color-blue-hover: #0A8FD8;
+  --color-green-hover: #1CC266;
+  --color-yellow-hover: #FFC766;
+
+/* Text that sits on a colored fill */
+  --color-on-green: #04210F;
+  --color-on-yellow: #2A1A00;
 
 /* Rainbow colors*/
   --color-blue-raiwbow: #6a69b3;
@@ -26,11 +59,27 @@
 
 /* ======================================================================= */
 /*  Rainbow glow — the ONE place to restyle every rainbow shadow.          */
-/*  Used by Modal, HoverLink, the Login/Register buttons and the          */
-/*  Play/Room room cards. Tweak a value below and it changes everywhere.   */
+/*  Used by Modal, the Login/Register buttons and the Play/Room room      */
+/*  cards. Tweak a value below and it changes everywhere.                 */
 /*  In markup use the `rainbow-shadow` class (or `hover:rainbow-shadow`    */
 /*  for a hover-only glow).                                                */
 /* ======================================================================= */
+body {
+  background: var(--color-page);
+  color: #ffffff;
+}
+
+/* One visible focus ring for the whole app. */
+:focus-visible {
+  outline: 2px solid var(--color-yellow);
+  outline-offset: 2px;
+}
+
+/* Scroll lock for ui/Dialog: a native <dialog> traps focus but not the wheel. */
+body:has(dialog[open]) {
+  overflow: hidden;
+}
+
 :root {
   --rainbow-1: var(--color-blue-raiwbow);
   --rainbow-2: var(--color-cyan-raiwbow);
@@ -48,16 +97,6 @@
 
 @utility rainbow-shadow {
   box-shadow: var(--rainbow-shadow);
-}
-
-.navbar-rainbow-line {
-  background-image: linear-gradient(
-    to right,
-    #0960ac, #89F1FB, #6a69b3, #49367c,
-    #0960ac, #89F1FB, #6a69b3, #49367c
-  );
-  background-size: 200% 100%;
-  animation: rainbow-scroll 6s linear infinite;
 }
 
 /* Same rainbow, painted onto the text itself. */

@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router"
+import { Link } from "react-router"
 import { useAuth } from "@/lib/auth.jsx"
 
 const buttonBase = "inline-block rounded-xl px-6 py-3 font-bold transition-transform duration-300 hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
@@ -6,12 +6,6 @@ const primaryButton = `${buttonBase} bg-white text-black hover:rainbow-shadow`
 const secondaryButton = `${buttonBase} border border-border text-white hover:bg-white/10`
 
 function Hero() {
-	//className is the convention for the css in tailwind, same as class in css.
-	// Spread onto a link to make its target open as a popup over this page
-	// instead of navigating away to the full page (see routes.jsx / NavBar.jsx).
-	const location = useLocation()
-	const asModal = { state: { background: location } }
-
 	const { user } = useAuth()
 
 	return (
@@ -35,10 +29,10 @@ function Hero() {
 			<div className="flex flex-wrap items-center justify-center gap-3">
 				{user ? (
 					<>
-						<Link to="/play" {...asModal} className={primaryButton}>
+						<Link to="/play" className={primaryButton}>
 							Play now!
 						</Link>
-						<Link to="/tournament" {...asModal} className={secondaryButton}>
+						<Link to="/tournament" className={secondaryButton}>
 							Tournaments
 						</Link>
 					</>

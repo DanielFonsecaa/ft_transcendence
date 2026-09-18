@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useState } from "react"
+import { api } from "./api.js"
 
 const AuthContext = createContext(null)
 
@@ -42,6 +43,32 @@ export function AuthProvider({ children }) {
 		}
 		setUser(null)
 	}, [])
+
+	// Once, when the app opens: if a user is stored, ask the server who they
+	// really are. A photo or display name changed elsewhere shows up without a
+	// fresh login. `loadUser()` instead of the `user` state keeps this out of the
+	// dependency array, so signing in later doesn't re-run it.
+	useEffect(() => {
+		if (!loadUser()) return
+
+		// StrictMode mounts effects twice in development, so a late answer has to
+		// check it still matters. Same `ignore` guard as Leaderboard.jsx.
+		let ignore = false
+		api
+			.get("/auth/user/")
+			.then((fresh) => {
+				if (!ignore) login(fresh)
+			})
+			.catch((error) => {
+				// 401/403 means the session is over. Anything else (the server being
+				// down) must not sign anyone out.
+				if (!ignore && (error.status === 401 || error.status === 403)) logout()
+			})
+
+		return () => {
+			ignore = true
+		}
+	}, [login, logout])
 
 	return (
 		<AuthContext.Provider
