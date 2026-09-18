@@ -4,7 +4,7 @@ from asgiref.sync import sync_to_async
 from channels.testing import WebsocketCommunicator
 from django.contrib.auth import BACKEND_SESSION_KEY, HASH_SESSION_KEY, SESSION_KEY, get_user_model
 from django.contrib.sessions.backends.db import SessionStore
-from django.test import TransactionTestCase, override_settings
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 
 from core.asgi import application
@@ -137,3 +137,22 @@ class ExpiredTurnTests(TransactionTestCase):
 		self.assertEqual(error["type"], "error")
 
 		await alice_comm.disconnect()
+
+class StartArmsTheTurnClockTests(TestCase):
+	def test_starting_a_game_persists_turn_started_at(self):
+		alice = User.objects.create_user(username="alice", email="a@example.com", password="x")
+		bob = User.objects.create_user(username="bob", email="b@example.com", password="x")
+
+		game = Game.objects.create(
+			host=alice, max_seats=4, starting_hand_size=7,
+			status=GameStatus.PENDING, turn_timer_seconds=30,
+		)
+		GamePlayer.objects.create(game=game, user=alice, seat=0)
+		GamePlayer.objects.create(game=game, user=bob, seat=1)
+
+		self.client.force_login(alice)
+		response = self.client.post(f"/api/games/{game.public_id}/start/")
+		self.assertEqual(response.status_code, 200)
+
+		game.refresh_from_db()
+		self.assertIsNotNone(game.turn_started_at)
