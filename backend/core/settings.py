@@ -287,3 +287,34 @@ else:
 			'BACKEND': 'django.core.mail.backends.console.EmailBackend',
 		},
 	}
+
+# With DEBUG off, Django hands an unhandled exception to the `django.request`
+# logger and returns the plain 500 page. With no LOGGING configured that logger
+# has nowhere to write, so the traceback is built and then dropped: the response
+# says nothing and `docker compose logs backend` shows only uvicorn's access
+# lines. Sending it to the console works with DEBUG off too, which is the point:
+# in production DEBUG must stay off, and this is the only way a 500 there ever
+# explains itself.
+LOGGING = {
+	'version': 1,
+	'disable_existing_loggers': False,
+	'formatters': {
+		'verbose': {
+			'format': '[{asctime}] {levelname} {name}: {message}',
+			'style': '{',
+		},
+	},
+	'handlers': {
+		'console': {
+			'class': 'logging.StreamHandler',
+			'formatter': 'verbose',
+		},
+	},
+	'loggers': {
+		'django.request': {
+			'handlers': ['console'],
+			'level': 'ERROR',
+			'propagate': False,
+		},
+	},
+}
