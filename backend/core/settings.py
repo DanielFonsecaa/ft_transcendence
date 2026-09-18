@@ -316,5 +316,17 @@ LOGGING = {
 			'level': 'ERROR',
 			'propagate': False,
 		},
+		# Our own code. Without an entry here these records reach the root
+		# logger, which has no handler, so Python's last-resort handler prints
+		# them bare to stderr — no timestamp, no logger name, and nothing below
+		# WARNING at all. That matters for the places that deliberately carry on
+		# after a failure, `game_api.spectators` above all: an unreachable Redis
+		# now degrades to a count of zero instead of a 500, and the log line is
+		# the only thing left that says so.
+		'game_api': {
+			'handlers': ['console'],
+			'level': 'INFO',
+			'propagate': False,
+		},
 	},
 }

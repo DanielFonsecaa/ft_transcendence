@@ -198,6 +198,19 @@ class StartGameTests(GameTestCase):
 		self.game.refresh_from_db()
 		self.assertEqual(self.game.state["settings"]["enabled_modifiers"], ["jump_in"])
 
+	def test_starting_records_when_the_first_turn_began(self):
+		# `start` used to assign turn_started_at and then save with an
+		# update_fields list that left it out, so it was never written. The
+		# countdown keys off it, and so does the expiry, so the whole first turn
+		# had no timer and could not run out.
+		self.game.turn_timer_seconds = 30
+		self.game.save()
+		GamePlayer.objects.create(game=self.game, user=self.bob, seat=1)
+		self.login(self.alice)
+		self.client.post(reverse("game-start", args=[self.game.public_id]))
+		self.game.refresh_from_db()
+		self.assertIsNotNone(self.game.turn_started_at)
+
 	def test_cannot_start_an_already_started_game(self):
 		GamePlayer.objects.create(game=self.game, user=self.bob, seat=1)
 		self.login(self.alice)

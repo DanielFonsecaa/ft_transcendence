@@ -15,13 +15,14 @@ from game_engine import GameSettings
 from game_engine import start_game as engine_start_game
 from game_engine import state_to_dict
 
+from . import spectators
 from .models import Friendship, FriendshipStatus, User, Game, GamePlayer, GameSpectator, GameStatus, Conversation, Tournament, TournamentParticipant, MODIFIER_FIELDS
 from .serializers import (
 	FriendshipSerializer, FriendshipTargetSerializer, PublicProfileSerializer, GameCreateSerializer, GameDetailSerializer, GameListSerializer,
 	LeaderboardEntrySerializer, MatchHistoryEntrySerializer, UserStatsSerializer, ChatMessageSerializer, ConversationSerializer,
 	TournamentCreateSerializer, TournamentDetailSerializer, TournamentListSerializer, LiveGameSerializer,
 )
-from .consumers import broadcast_game_update as _broadcast_game_update, leave_pending_game, notify_friendship_change
+from .consumers import broadcast_game_update as _broadcast_game_update, leave_pending_game, notify_friendship_change, schedule_turn_expiry
 
 @ensure_csrf_cookie
 def csrf(request):
@@ -185,7 +186,8 @@ class GameViewSet(viewsets.GenericViewSet):
 
 	def list(self, request):
 		games = [g for g in self.get_queryset().filter(status=GameStatus.PENDING) if g.players.count() < g.max_seats]
-		return Response(GameListSerializer(games, many=True).data)
+		context = {"spectator_counts": spectators.spectator_counts([g.pk for g in games])}
+		return Response(GameListSerializer(games, many=True, context=context).data)
 
 	def retrieve(self, request, code=None):
 		game = self._resolve(code)
@@ -287,7 +289,15 @@ class GameViewSet(viewsets.GenericViewSet):
 		game.state = state_to_dict(new_state)
 		game.status = GameStatus.IN_PROGRESS
 		game.turn_started_at = timezone.now()
-		game.save(update_fields=["state", "status"])
+		# `turn_started_at` belongs in this list. Leaving it out assigned the
+		# field and then quietly declined to write it, so the first turn of every
+		# game had no start time: the countdown never appeared, and the turn
+		# could not expire either, because the expiry gives up on a null.
+		game.save(update_fields=["state", "status", "turn_started_at"])
+
+		# Hand the game to a watcher so a turn runs out even while everybody is
+		# waiting politely for the player who walked away.
+		schedule_turn_expiry(game.pk)
 
 		_broadcast_game_update(game)
 		fresh_game = self.get_queryset().get(pk=game.pk)
@@ -295,8 +305,9 @@ class GameViewSet(viewsets.GenericViewSet):
 
 	@action(detail=False, methods=["get"])
 	def live(self, request):
-		games = self.get_queryset().filter(status=GameStatus.IN_PROGRESS)
-		return Response(LiveGameSerializer(games, many=True).data)
+		games = list(self.get_queryset().filter(status=GameStatus.IN_PROGRESS))
+		context = {"spectator_counts": spectators.spectator_counts([g.pk for g in games])}
+		return Response(LiveGameSerializer(games, many=True, context=context).data)
 
 class StatsPagination(PageNumberPagination):
 	page_size = 20

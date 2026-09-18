@@ -1,4 +1,5 @@
 import json
+import threading
 import time
 
 from asgiref.sync import async_to_sync
@@ -137,6 +138,95 @@ def notify_friendship_change(*user_ids):
 		if user_id is None:
 			continue
 		async_to_sync(channel_layer.group_send)(f"presence_{user_id}", {"type": "friendship.update"})
+
+def expire_overdue_turn(game):
+	"""
+	Draw for whoever is sitting on an overdue turn and pass it on.
+
+	Returns `(game, expired)`. Safe to call at any moment and from anywhere: a
+	turn that still has time left is left alone, so two callers racing on the
+	same turn cannot advance it twice — the first resets `turn_started_at` and
+	the second finds it fresh.
+	"""
+	if game.turn_timer_seconds is None or game.state is None or game.status != GameStatus.IN_PROGRESS:
+		return game, False
+	if game.turn_started_at is None:
+		return game, False
+
+	elapsed = (timezone.now() - game.turn_started_at).total_seconds()
+	if elapsed < game.turn_timer_seconds:
+		return game, False
+
+	state = state_from_dict(game.state)
+	current_player_id = state.players[state.current_player_index].player_id
+
+	try:
+		if not state.has_drawn_this_turn:
+			state = draw_card(state, current_player_id)
+		state = pass_turn(state, current_player_id)
+	except (IllegalMove, GameOver):
+		return game, False
+
+	game.state = state_to_dict(state)
+	game.turn_started_at = timezone.now()
+	game.save(update_fields=["state", "turn_started_at"])
+	return game, True
+
+# One watcher thread per game, so a turn runs out on its own.
+#
+# Until this existed, `expire_overdue_turn` was only ever reached from
+# `connect()` and `receive()` — that is, when somebody *did* something. A player
+# who walks away therefore stalled the table for as long as everyone else was
+# polite enough to wait: the countdown on their screens reached zero and nothing
+# happened, because the only thing that could move the turn on was an action
+# from the very people who were waiting.
+#
+# A thread and a sleep, like `_expire_disconnected_player` above, because this
+# project has no worker process. `_turn_watchers` keeps it to one per game; the
+# set is per process, so several web workers would each keep their own, which is
+# harmless: `expire_overdue_turn` no-ops on a turn that has already moved.
+#
+# Started from `GameViewSet.start` only, never from `connect()`, so that merely
+# opening a socket cannot spawn one. A process restarting mid-game therefore
+# loses the watcher, and that game falls back to expiring on the next action —
+# which is exactly the old behaviour, so the worst case is no worse than before.
+_turn_watchers = set()
+_turn_watchers_lock = threading.Lock()
+
+def schedule_turn_expiry(game_id):
+	with _turn_watchers_lock:
+		if game_id in _turn_watchers:
+			return
+		_turn_watchers.add(game_id)
+
+	run_in_background(_watch_turns, game_id)
+
+def _watch_turns(game_id):
+	try:
+		while True:
+			game = Game.objects.filter(pk=game_id).first()
+			# Gone, over, or never had a timer: there is nothing left to watch.
+			if game is None or game.status != GameStatus.IN_PROGRESS:
+				return
+			if game.turn_timer_seconds is None or game.turn_started_at is None:
+				return
+
+			remaining = game.turn_timer_seconds - (timezone.now() - game.turn_started_at).total_seconds()
+			if remaining > 0:
+				# Sleep out the rest of *this* turn and look again. Someone acting
+				# in the meantime just means a longer wait next time round.
+				time.sleep(remaining)
+				continue
+
+			with transaction.atomic():
+				locked = Game.objects.select_for_update().get(pk=game_id)
+				locked, expired = expire_overdue_turn(locked)
+
+			if expired:
+				broadcast_game_update(locked)
+	finally:
+		with _turn_watchers_lock:
+			_turn_watchers.discard(game_id)
 
 class GameConsumer(WebsocketConsumer):
 	def connect(self):
@@ -377,29 +467,7 @@ class GameConsumer(WebsocketConsumer):
 		}
 
 	def _expire_overdue_turn(self, game):
-		if game.turn_timer_seconds is None or game.state is None or game.status != GameStatus.IN_PROGRESS:
-			return game, False
-		if game.turn_started_at is None:
-			return game, False
-
-		elapsed = (timezone.now() - game.turn_started_at).total_seconds()
-		if elapsed < game.turn_timer_seconds:
-			return game, False
-
-		state = state_from_dict(game.state)
-		current_player_id = state.players[state.current_player_index].player_id
-
-		try:
-			if not state.has_drawn_this_turn:
-				state = draw_card(state, current_player_id)
-			state = pass_turn(state, current_player_id)
-		except (IllegalMove, GameOver):
-			return game, False
-
-		game.state = state_to_dict(state)
-		game.turn_started_at = timezone.now()
-		game.save(update_fields=["state", "turn_started_at"])
-		return game, True
+		return expire_overdue_turn(game)
 
 	def _handle_chat(self, payload):
 		body = (payload.get("body") or "").strip()

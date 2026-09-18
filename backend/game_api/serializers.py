@@ -118,6 +118,12 @@ class GameListSerializer(serializers.ModelSerializer):
 		read_only_fields = fields
 
 	def get_spectator_count(self, game):
+		# A list view reads every count in one `MGET` and puts the answers in the
+		# context; one room on its own still asks directly. Without the batch a
+		# page of rooms costs one Redis round trip each.
+		counts = self.context.get("spectator_counts")
+		if counts is not None:
+			return counts.get(game.pk, 0)
 		return spectators.spectator_count(game.pk)
 
 
