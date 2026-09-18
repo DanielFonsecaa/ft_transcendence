@@ -134,7 +134,7 @@ class GameCreateSerializer(serializers.ModelSerializer):
 	class Meta:
 		model = Game
 		fields = ("name", "mode", "max_seats", "starting_hand_size", "turn_timer_seconds", "allow_spectators", *_MODIFIER_FIELDS)
-		extra_kwargs = {"max_seats": {"default": 4}, "starting_hand_size": {"default": 7}}
+		extra_kwargs = {"max_seats": {"default": 4}, "starting_hand_size": {"default": 7}, f"turn_timer_seconds": {"min_value": 10, "max_value": 300},}
 
 	def create(self, validated_data):
 		user = self.context["request"].user

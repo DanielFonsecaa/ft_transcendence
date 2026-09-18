@@ -236,7 +236,8 @@ class GameConsumer(WebsocketConsumer):
 						tournament = Tournament.objects.select_for_update().get(pk=game.tournament_id)
 						tournament.maybe_advance(game.tournament_round)
 				else:
-					game.save(update_fields=["state"])
+					game.turn_started_at = timezone.now()
+					game.save(update_fields=["state", "turn_started_at"])
 		except (IllegalMove, GameOver) as exc:
 			self._send_error(str(exc))
 			return
