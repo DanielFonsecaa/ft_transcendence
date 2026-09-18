@@ -16,7 +16,18 @@ const TONES = {
 	soft: "border border-white/10 bg-white/5 px-4 py-3.5 text-[17px] focus:border-green",
 }
 
-function FormField({ label, hint, error, as = "input", tone = "panel", trailing, className = "", children, ...rest }) {
+function FormField({
+	label,
+	labelClassName = "",
+	hint,
+	error,
+	as = "input",
+	tone = "panel",
+	trailing,
+	className = "",
+	children,
+	...rest
+}) {
 	const id = useId()
 	const hintId = `${id}-hint`
 	const errorId = `${id}-error`
@@ -37,7 +48,9 @@ function FormField({ label, hint, error, as = "input", tone = "panel", trailing,
 
 	return (
 		<div className={`flex flex-col gap-2 ${className}`}>
-			<label htmlFor={id} className="font-mono text-[11px] tracking-[0.16em] text-muted">
+			{/* labelClassName is how a caller hides the label with sr-only: the label
+			    still exists for a screen reader, it just isn't drawn. */}
+			<label htmlFor={id} className={`font-mono text-[11px] tracking-[0.16em] text-muted ${labelClassName}`}>
 				{label}
 			</label>
 			{trailing ? (
