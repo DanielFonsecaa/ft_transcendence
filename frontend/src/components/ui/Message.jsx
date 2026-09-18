@@ -9,9 +9,17 @@ export function Loading({ children = "Loading…", className = "" }) {
 	)
 }
 
-export function ErrorMessage({ children, className = "" }) {
+// `boxed` is the design's louder error: the same red text inside a tinted,
+// outlined box. Used where an error is the answer to something the person just
+// did, like a failed sign-in or a rejected upload.
+export function ErrorMessage({ children, boxed = false, className = "" }) {
 	return (
-		<p role="alert" className={`font-mono text-[13px] tracking-[0.06em] text-red-soft ${className}`}>
+		<p
+			role="alert"
+			className={`font-mono text-[13px] tracking-[0.06em] text-red-soft ${
+				boxed ? "rounded-md border border-red bg-red/10 px-4 py-3.5" : ""
+			} ${className}`}
+		>
 			{children}
 		</p>
 	)

@@ -6,27 +6,47 @@ import { useId } from "react"
 //
 // useId() gives ids that are unique on the page, which is what ties the label,
 // the hint and the error to the field.
-function FormField({ label, hint, error, as = "input", className = "", children, ...rest }) {
+//
+// `tone` picks between the design's two field looks: "panel" for a field on the
+// page background (dialogs, Create room) and "soft" for one inside a panel
+// (Login, Register, Profile). `trailing` puts a control inside the field, like
+// PasswordInput's eye toggle.
+const TONES = {
+	panel: "border-2 border-line-strong bg-page px-4 py-3 text-[15px] focus:border-green",
+	soft: "border border-white/10 bg-white/5 px-4 py-3.5 text-[17px] focus:border-green",
+}
+
+function FormField({ label, hint, error, as = "input", tone = "panel", trailing, className = "", children, ...rest }) {
 	const id = useId()
 	const hintId = `${id}-hint`
 	const errorId = `${id}-error`
 	const describedBy = [hint && hintId, error && errorId].filter(Boolean).join(" ") || undefined
 
-	const fieldClasses = `rounded-md border-2 bg-page px-4 py-3 text-[15px] text-white outline-none transition-colors ${
-		error ? "border-red" : "border-line-strong focus:border-green"
-	}`
+	const fieldClasses = `w-full rounded-md text-white outline-none transition-colors disabled:text-white/50 read-only:text-white/50 ${
+		TONES[tone] ?? TONES.panel
+	} ${error ? "border-red focus:border-red" : ""} ${trailing ? "pr-14" : ""}`
+
+	const field =
+		as === "select" ? (
+			<select id={id} aria-describedby={describedBy} aria-invalid={Boolean(error)} className={fieldClasses} {...rest}>
+				{children}
+			</select>
+		) : (
+			<input id={id} aria-describedby={describedBy} aria-invalid={Boolean(error)} className={fieldClasses} {...rest} />
+		)
 
 	return (
 		<div className={`flex flex-col gap-2 ${className}`}>
-			<label htmlFor={id} className="font-mono text-[11px] tracking-[0.14em] text-muted">
+			<label htmlFor={id} className="font-mono text-[11px] tracking-[0.16em] text-muted">
 				{label}
 			</label>
-			{as === "select" ? (
-				<select id={id} aria-describedby={describedBy} aria-invalid={Boolean(error)} className={fieldClasses} {...rest}>
-					{children}
-				</select>
+			{trailing ? (
+				<span className="relative flex items-center">
+					{field}
+					<span className="absolute right-2 flex items-center">{trailing}</span>
+				</span>
 			) : (
-				<input id={id} aria-describedby={describedBy} aria-invalid={Boolean(error)} className={fieldClasses} {...rest} />
+				field
 			)}
 			{hint && (
 				<p id={hintId} className="font-mono text-[11px] text-muted">
