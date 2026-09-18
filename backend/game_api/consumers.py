@@ -110,11 +110,33 @@ class PresenceConsumer(WebsocketConsumer):
 			"status": event["status"],
 		}))
 
+	def friendship_update(self, event):
+		self.send(text_data=json.dumps({"type": "friendship_update"}))
+
 def broadcast_game_update(game):
 	from channels.layers import get_channel_layer
 
 	channel_layer = get_channel_layer()
 	async_to_sync(channel_layer.group_send)(f"game_{game.pk}", {"type": "game.update"})
+
+def notify_friendship_change(*user_ids):
+	"""
+	Poke each of these users' presence sockets so their client refetches its
+	friendships: a new request, an accept, a decline, a cancel or a block.
+
+	Carries no data on purpose, exactly like `broadcast_game_update` above. The
+	REST list stays the single source of truth for what a friendship looks like,
+	so a socket event can never drift from it, and a client that missed an event
+	catches up on its next fetch anyway. Callers send it after commit, or the
+	client could refetch and read a row that has not landed yet.
+	"""
+	from channels.layers import get_channel_layer
+
+	channel_layer = get_channel_layer()
+	for user_id in user_ids:
+		if user_id is None:
+			continue
+		async_to_sync(channel_layer.group_send)(f"presence_{user_id}", {"type": "friendship.update"})
 
 class GameConsumer(WebsocketConsumer):
 	def connect(self):

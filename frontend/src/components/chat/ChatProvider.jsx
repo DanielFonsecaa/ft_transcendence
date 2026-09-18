@@ -44,6 +44,9 @@ export function ChatProvider({ children }) {
 
 	const [chat, setChat] = useState(emptyChat)
 	const [friends, setFriends] = useState([])
+	// Incoming friend requests I have not answered. The same fetch that feeds the
+	// chat rows already groups them, so the header's badge costs no extra request.
+	const [incomingCount, setIncomingCount] = useState(0)
 	const [presence, setPresence] = useState({})
 	const [typing, setTyping] = useState({})
 	const [error, setError] = useState("")
@@ -92,6 +95,7 @@ export function ChatProvider({ children }) {
 				myPublicId,
 			)
 			setFriends(grouped.friends.map((entry) => entry.person))
+			setIncomingCount(grouped.incoming.length)
 			// Seeded, not replaced: a message can land over the socket while these
 			// two requests are in flight, and it must not be lost. The server's
 			// numbers win where they disagree — `unread_count` is the authority, and
@@ -195,11 +199,17 @@ export function ChatProvider({ children }) {
 				if (data.type === "presence_update") {
 					setPresence((current) => ({ ...current, [data.username]: data.status }))
 				}
+				// The server pokes without saying what changed, so we refetch. The
+				// REST list stays the one authority on what a friendship is, and a
+				// poke we miss costs nothing: the next fetch catches up anyway.
+				if (data.type === "friendship_update") {
+					void load()
+				}
 			},
 		})
 
 		return () => handle.close()
-	}, [myPublicId])
+	}, [myPublicId, load])
 
 	const send = useCallback((payload) => socketRef.current?.send(payload) ?? false, [])
 
@@ -350,6 +360,7 @@ export function ChatProvider({ children }) {
 			rows,
 			threads: chat.threads,
 			unreadTotal: totalUnread(chat.threads),
+			incomingCount,
 			openWith,
 			listOpen,
 			tabs,
@@ -369,6 +380,7 @@ export function ChatProvider({ children }) {
 		[
 			rows,
 			chat.threads,
+			incomingCount,
 			openWith,
 			listOpen,
 			tabs,

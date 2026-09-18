@@ -21,7 +21,7 @@ from .serializers import (
 	LeaderboardEntrySerializer, MatchHistoryEntrySerializer, UserStatsSerializer, ChatMessageSerializer, ConversationSerializer,
 	TournamentCreateSerializer, TournamentDetailSerializer, TournamentListSerializer, LiveGameSerializer,
 )
-from .consumers import broadcast_game_update as _broadcast_game_update, leave_pending_game
+from .consumers import broadcast_game_update as _broadcast_game_update, leave_pending_game, notify_friendship_change
 
 @ensure_csrf_cookie
 def csrf(request):
@@ -85,6 +85,7 @@ class FriendshipViewSet(viewsets.GenericViewSet):
 			raise ValidationError("A friendship or pending request already exists with this user.")
 
 		friendship = Friendship.objects.create(requester=request.user, addressee=target)
+		transaction.on_commit(lambda: notify_friendship_change(target.pk))
 
 		return Response(self.get_serializer(friendship).data, status=201)
 
@@ -99,6 +100,7 @@ class FriendshipViewSet(viewsets.GenericViewSet):
 
 		friendship.status = FriendshipStatus.ACCEPTED
 		friendship.save(update_fields=["status"])
+		transaction.on_commit(lambda: notify_friendship_change(friendship.requester_id))
 
 		return Response(self.get_serializer(friendship).data)
 
@@ -113,6 +115,7 @@ class FriendshipViewSet(viewsets.GenericViewSet):
 
 		friendship.status = FriendshipStatus.DECLINED
 		friendship.save(update_fields=["status"])
+		transaction.on_commit(lambda: notify_friendship_change(friendship.requester_id))
 
 		return Response(self.get_serializer(friendship).data)
 
@@ -125,7 +128,9 @@ class FriendshipViewSet(viewsets.GenericViewSet):
 		if friendship.status == FriendshipStatus.BLOCKED and friendship.requester_id != user_id:
 			raise PermissionDenied("Only the person who blocked this user can undo it.")
 
+		other_id = friendship.addressee_id if friendship.requester_id == user_id else friendship.requester_id
 		friendship.delete()
+		transaction.on_commit(lambda: notify_friendship_change(other_id))
 
 		return Response(status=204)
 
@@ -146,6 +151,11 @@ class FriendshipViewSet(viewsets.GenericViewSet):
 			friendship = Friendship.objects.create(
 				requester=request.user, addressee=target, status=FriendshipStatus.BLOCKED
 			)
+		# The blocked person's own friends list just changed, so poke them too.
+		# This does not leak the block: their list simply loses the person, which
+		# is what an ordinary unfriend looks like as well, and is what they would
+		# have seen on their next load anyway.
+		transaction.on_commit(lambda: notify_friendship_change(target.pk))
 		return Response(self.get_serializer(friendship).data)
 
 class GameViewSet(viewsets.GenericViewSet):

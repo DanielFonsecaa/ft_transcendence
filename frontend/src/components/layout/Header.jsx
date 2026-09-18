@@ -1,6 +1,7 @@
 import { Link } from "react-router"
 import BrandMark from "@/components/ui/BrandMark.jsx"
 import Avatar from "@/components/ui/Avatar.jsx"
+import { useChat } from "@/components/chat/ChatProvider.jsx"
 import { useAuth } from "@/lib/auth.jsx"
 
 // The design's icons, copied as JSX: hyphenated SVG attributes become camelCase
@@ -62,7 +63,7 @@ function PersonIcon() {
 }
 
 const ICON_LINK =
-	"flex h-11 w-[clamp(40px,11vw,48px)] items-center justify-center rounded-md border-2 text-dim transition-colors"
+	"relative flex h-11 w-[clamp(40px,11vw,48px)] items-center justify-center rounded-md border-2 text-dim transition-colors"
 
 const NAV_LINKS = [
 	{ to: "/tournament", label: "Tournaments", Icon: TournamentIcon, hover: "border-transparent hover:border-red hover:text-red-soft" },
@@ -72,6 +73,9 @@ const NAV_LINKS = [
 
 function Header() {
 	const { user } = useAuth()
+	// Friend requests waiting for an answer. It arrives over the presence socket
+	// the moment somebody sends one, so the badge does not wait for a page load.
+	const { incomingCount } = useChat()
 
 	return (
 		<header className="sticky top-0 z-20 border-b border-line bg-bar">
@@ -86,6 +90,12 @@ function Header() {
 								<Link to={to} className={`${ICON_LINK} ${hover}`}>
 									<Icon />
 									<span className="sr-only">{label}</span>
+									{to === "/friends" && incomingCount > 0 && (
+										<span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-red px-1.5 py-0.5 text-center font-mono text-[11px] font-bold leading-4 text-white">
+											{incomingCount}
+											<span className="sr-only"> friend requests waiting</span>
+										</span>
+									)}
 								</Link>
 							</li>
 						))}
