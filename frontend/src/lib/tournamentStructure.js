@@ -45,7 +45,7 @@ export function makeDefaultConfig(format = 'knockout') {
 		starting_hand_size: 7,
 		turn_timer_seconds: 30,
 		// Flat, not nested: the backend takes these as top-level fields, and
-		// enabledHouseRuleLabels() reads the config object directly.
+		// enabledRuleLabels() (lib/rooms.js) reads the config object directly.
 		draw_stacking,
 		jump_in,
 		draw_until_playable,

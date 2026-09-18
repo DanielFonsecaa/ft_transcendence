@@ -42,23 +42,8 @@
 /* Text that sits on a colored fill */
   --color-on-green: #04210F;
   --color-on-yellow: #2A1A00;
-
-/* Rainbow colors*/
-  --color-blue-raiwbow: #6a69b3;
-  --color-cyan-raiwbow: #49367c;
-  --color-ligh-purple-raiwbow: #89F1FB;
-  --color-purple-raiwbow: #0960ac;
-
 }
 
-
-/* ======================================================================= */
-/*  Rainbow glow — the ONE place to restyle every rainbow shadow.          */
-/*  Used by Modal, the Login/Register buttons and the Play/Room room      */
-/*  cards. Tweak a value below and it changes everywhere.                 */
-/*  In markup use the `rainbow-shadow` class (or `hover:rainbow-shadow`    */
-/*  for a hover-only glow).                                                */
-/* ======================================================================= */
 body {
   background: var(--color-page);
   color: #ffffff;
@@ -67,46 +52,4 @@ body {
 /* Scroll lock for ui/Dialog: a native <dialog> traps focus but not the wheel. */
 body:has(dialog[open]) {
   overflow: hidden;
-}
-
-:root {
-  --rainbow-1: var(--color-blue-raiwbow);
-  --rainbow-2: var(--color-cyan-raiwbow);
-  --rainbow-3: var(--color-ligh-purple-raiwbow);
-  --rainbow-4: var(--color-purple-raiwbow);
-  --rainbow-shadow-offset: 4px;
-  --rainbow-shadow-blur: 16px;
-
-  --rainbow-shadow:
-    calc(-1 * var(--rainbow-shadow-offset)) calc(-1 * var(--rainbow-shadow-offset)) var(--rainbow-shadow-blur) 0 var(--rainbow-1),
-    var(--rainbow-shadow-offset)            calc(-1 * var(--rainbow-shadow-offset)) var(--rainbow-shadow-blur) 0 var(--rainbow-2),
-    var(--rainbow-shadow-offset)            var(--rainbow-shadow-offset)            var(--rainbow-shadow-blur) 0 var(--rainbow-3),
-    calc(-1 * var(--rainbow-shadow-offset)) var(--rainbow-shadow-offset)            var(--rainbow-shadow-blur) 0 var(--rainbow-4);
-}
-
-@utility rainbow-shadow {
-  box-shadow: var(--rainbow-shadow);
-}
-
-/* Same rainbow, painted onto the text itself. */
-@utility rainbow-text {
-  background-image: linear-gradient(
-    to right,
-    #0960ac, #89F1FB, #6a69b3, #49367c,
-    #0960ac, #89F1FB, #6a69b3, #49367c
-  );
-  background-size: 200% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-  animation: rainbow-scroll 6s linear infinite;
-}
-
-@keyframes rainbow-scroll {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: 0% 0;
-  }
 }

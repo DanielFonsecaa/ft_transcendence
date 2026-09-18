@@ -11,6 +11,9 @@ const SOLID = {
 	blue: "bg-blue border-blue text-white hover:bg-blue-hover hover:border-blue-hover",
 	green: "bg-green border-green text-on-green hover:bg-green-hover hover:border-green-hover",
 	yellow: "bg-yellow border-yellow text-on-yellow hover:bg-yellow-hover hover:border-yellow-hover",
+	// Added in area 06: the design's white main action, used for "Join tournament"
+	// so it reads apart from the green "Start tournament" beside it.
+	white: "bg-white border-white text-page hover:bg-soft hover:border-soft",
 }
 
 // outline: colored border and text, filling in on hover.

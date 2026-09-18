@@ -2,8 +2,7 @@ import Avatar from "@/components/ui/Avatar.jsx"
 import Button from "@/components/ui/Button.jsx"
 import FormField from "@/components/ui/FormField.jsx"
 import { ErrorMessage } from "@/components/ui/Message.jsx"
-import pencil from "@/assets/pencil.svg"
-import logoutIcon from "@/assets/logout.svg"
+import { LogoutIcon, PencilIcon } from "@/components/profile/ProfileIcons.jsx"
 
 // The account card: photo, the three fields, and whichever pair of buttons the
 // current mode needs. It holds no state — the page owns the draft and passes it
@@ -36,7 +35,7 @@ function ProfileCard({
 							aria-label="Change profile picture"
 							className="absolute bottom-0 right-0 flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-full border-2 border-yellow bg-page transition-transform hover:scale-110"
 						>
-							<img src={pencil} alt="" className="w-[15px]" />
+							<PencilIcon className="h-[18px] w-[18px]" />
 						</button>
 					)}
 				</div>
@@ -117,11 +116,11 @@ function ProfileCard({
 							className="gap-2.5 px-6 py-3.5 font-mono text-sm tracking-[0.06em]"
 						>
 							Edit
-							<img src={pencil} alt="" className="w-[15px]" />
+							<PencilIcon className="h-[18px] w-[18px]" />
 						</Button>
 						<Button variant="small" onClick={onLogout} className="gap-2.5 px-6 py-3.5 text-sm">
 							Logout
-							<img src={logoutIcon} alt="" className="w-[15px]" />
+							<LogoutIcon className="h-[18px] w-[18px]" />
 						</Button>
 					</>
 				)}

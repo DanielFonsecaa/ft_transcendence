@@ -11,7 +11,11 @@ import { useEffect, useId, useRef } from "react"
 // stop so the browser doesn't close behind the parent's back — onClose() sets
 // `open` to false and the effect does the closing. The page behind is kept from
 // scrolling by `body:has(dialog[open])` in index.css.
-function Dialog({ open, onClose, title, accent = "green", className = "", children }) {
+// `width` was added in area 06: the create-tournament dialog puts the form and a
+// live structure preview side by side, which needs more than the 600px every
+// other dialog wants. It is a class on the <dialog> itself, because that is the
+// element the browser sizes.
+function Dialog({ open, onClose, title, accent = "green", width = "w-[min(100%-2rem,600px)]", className = "", children }) {
 	const ref = useRef(null)
 	const titleId = useId()
 
@@ -42,7 +46,7 @@ function Dialog({ open, onClose, title, accent = "green", className = "", childr
 			onClick={(e) => {
 				if (e.target === ref.current) onClose?.()
 			}}
-			className="m-auto w-[min(100%-2rem,600px)] bg-transparent p-0 text-white backdrop:bg-black/80"
+			className={`m-auto bg-transparent p-0 text-white backdrop:bg-black/80 ${width}`}
 		>
 			<div
 				className={`flex max-h-[calc(100vh-3rem)] flex-col gap-5 overflow-y-auto rounded-lg border border-white/10 border-t-4 bg-panel p-[clamp(20px,4vw,28px)] ${

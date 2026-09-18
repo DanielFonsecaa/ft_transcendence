@@ -1,19 +1,37 @@
+import { useEffect, useState } from "react"
 import { Link } from "react-router"
 import { FORMATS } from "@/lib/tournamentStructure.js"
-// Mock data until the tournament backend exists. Area 06 swaps this one import
-// for `listTournaments()`; nothing else in this file has to change.
-import { mockTournaments } from "@/lib/tournaments.js"
+// Still mock data until the tournament backend exists, but it now comes through
+// the same `listTournaments()` the tournament pages use (area 06), so there is
+// one list and one shape. It is async because the real endpoint will be.
+import { listTournaments } from "@/lib/tournaments.js"
 
 // The design's "NEXT MATCH" countdown is left out: nothing tells us when the
 // next match starts.
 function TournamentBanner() {
-	const live = mockTournaments().find((tournament) => tournament.status === "in_progress")
+	const [live, setLive] = useState(null)
+
+	useEffect(() => {
+		let ignore = false
+
+		listTournaments()
+			.then((tournaments) => {
+				if (!ignore) setLive(tournaments.find((tournament) => tournament.status === "in_progress") ?? null)
+			})
+			// A banner is a bonus, not part of the page: if the list can't be had,
+			// it stays away rather than pushing an error onto Home.
+			.catch(() => {})
+
+		return () => {
+			ignore = true
+		}
+	}, [])
 
 	// A section with nothing to say draws nothing at all.
 	if (!live) return null
 
-	const format = FORMATS[live.config?.format]?.label ?? "Tournament"
-	const players = live.participants?.length ?? 0
+	const format = FORMATS[live.format]?.label ?? "Tournament"
+	const players = live.participant_count ?? 0
 
 	return (
 		<section className="mx-auto w-full max-w-[1240px] px-[clamp(16px,4vw,24px)] pb-[88px]">

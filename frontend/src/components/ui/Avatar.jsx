@@ -9,6 +9,9 @@ const SIZES = {
 	// Added in area 03: a lobby seat and a seat at the table size their own circle
 	// (it follows the arena's height), so the photo just fills whatever it is given.
 	fill: "h-full w-full text-base",
+	// Added in area 06: the face inside a tournament participant chip, which is
+	// smaller than `xs` because the chip is only a line of mono text tall.
+	chip: "h-[22px] w-[22px] text-[10px]",
 }
 
 const RINGS = {
