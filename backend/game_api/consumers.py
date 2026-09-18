@@ -182,14 +182,29 @@ class GameConsumer(WebsocketConsumer):
 
 		async_to_sync(self.channel_layer.group_discard)(self.group_name, self.channel_name)
 
+		# Everything here goes through `self.game_id` and `self.user`, the two
+		# things `connect()` actually sets — the same way every other method in
+		# this class reads the game.
 		player = GamePlayer.objects.filter(game_id=self.game_id, user=self.user).first()
 		if player is not None:
 			GamePlayer.objects.filter(pk=player.pk).update(is_connected=False)
+			# A player dropping out of a room that has not started yet gives up
+			# the seat, after a grace period so a page refresh doesn't cost it.
+			# `_expire_disconnected_player` re-checks PENDING under a lock; this
+			# check only avoids starting a thread that would find nothing to do.
+			if Game.objects.filter(pk=self.game_id, status=GameStatus.PENDING).exists():
+				run_in_background(_expire_disconnected_player, self.game_id, player.pk)
 		else:
-			GamePlayer.objects.filter(pk=self.game_player.pk).update(is_connected=False)
-			if self.game.status == GameStatus.PENDING:
-				run_in_background(_expire_disconnected_player, self.game.pk, self.game_player.pk)
-		broadcast_game_update(self.game)
+			# No GamePlayer row means a spectator, and `connect()` registered one.
+			spectators.unregister_spectator(self.game_id)
+
+		# The room can be gone by now — the last player leaving a pending game
+		# closes it — and a disconnect must not raise.
+		try:
+			game = Game.objects.get(pk=self.game_id)
+			broadcast_game_update(game)
+		except Game.DoesNotExist:
+			pass
 
 	def receive(self, text_data):
 		if getattr(self, "is_done", False):
