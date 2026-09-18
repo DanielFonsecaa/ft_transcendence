@@ -27,7 +27,7 @@ function BigFooter() {
 			<div className="mx-auto flex max-w-[1240px] flex-col gap-[34px] px-[clamp(16px,4vw,24px)] pb-10 pt-[clamp(32px,6vw,56px)]">
 				<div className="flex flex-wrap items-start justify-between gap-10">
 					<p className="rounded-md border-[3px] border-yellow bg-page px-[26px] py-5 font-mono text-[22px] font-bold leading-snug text-yellow">
-						ANOTHER +4?! OH, PISS OFF.
+						ANOTHER +4?! OH, BUZZ OFF.
 					</p>
 
 					<div className="flex flex-wrap items-center gap-x-[18px] gap-y-3.5">

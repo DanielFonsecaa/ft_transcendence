@@ -1,6 +1,9 @@
 // The rules, corrected against `backend/game_engine/engine.py` rather than
 // copied from the design:
 //   - a +4 has no restriction: `is_playable` returns True for it, always
+//   - a +2 and a +4 make the next player draw and skip them (`_apply_standard
+//     _effects`), so with the classic rules nobody can answer one. Answering is
+//     what the Stacking draw cards house rule adds, so it is described there.
 //   - the hand size is the room's `starting_hand_size`, 7 by default
 //   - nobody has to shout anything; there is no such move
 //   - one game, one winner — there are no rounds outside a tournament
@@ -27,14 +30,14 @@ const WINNING = "the first player to discard their last card wins the game."
 const CARDS = [
 	{
 		name: "+2 (Overload)",
-		text: "The next player draws 2 cards and loses their turn. It can be played on the same color or on another +2.",
+		text: "The next player draws 2 cards and loses their turn — with the classic rules they never get to answer it. Stacking draw cards, in House rules, is what lets a +2 be answered with another +2.",
 	},
 	{ name: "Reverse (Reverse Orbit)", text: "Changes the direction of play." },
 	{ name: "Skip (System Failure)", text: "The next player loses their turn." },
 	{ name: "Wild (Change Color)", text: "Choose the color that carries on. It can be played at any time." },
 	{
 		name: "Wild +4 (Meteor Shower)",
-		text: "Choose the color; the next player draws 4 cards and loses their turn. It can be played at any time, with no restriction.",
+		text: "Choose the color; the next player draws 4 cards and loses their turn, with no chance to answer either. It can be played at any time, with no restriction. Stacking draw cards lets a +4 be answered with another +4.",
 	},
 ]
 

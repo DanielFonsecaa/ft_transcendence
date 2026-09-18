@@ -7,6 +7,7 @@ import FormField from "@/components/ui/FormField.jsx"
 import PasswordInput from "@/components/ui/PasswordInput.jsx"
 import { ErrorMessage } from "@/components/ui/Message.jsx"
 import { api } from "@/lib/api.js"
+import { rememberDestination } from "@/lib/oauth.js"
 import { useAuth } from "@/lib/auth.jsx"
 
 function Login() {
@@ -27,6 +28,9 @@ function Login() {
 
 	const startOAuth = (provider, url) => {
 		setOauth(provider)
+		// The browser is about to leave the site, taking `location.state` with
+		// it, so `from` is parked somewhere that survives the round trip.
+		rememberDestination(from)
 		window.location.href = url
 	}
 

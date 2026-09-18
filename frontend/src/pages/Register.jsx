@@ -8,6 +8,7 @@ import FormField from "@/components/ui/FormField.jsx"
 import PasswordInput from "@/components/ui/PasswordInput.jsx"
 import { ErrorMessage } from "@/components/ui/Message.jsx"
 import { api } from "@/lib/api.js"
+import { rememberDestination } from "@/lib/oauth.js"
 
 function Register() {
 	const [username, setUsername] = useState("")
@@ -25,6 +26,9 @@ function Register() {
 
 	const startOAuth = (provider, url) => {
 		setOauth(provider)
+		// Nowhere in particular to return to from here, but this also clears
+		// anything a previous sign-in attempt left behind.
+		rememberDestination("/")
 		window.location.href = url
 	}
 
