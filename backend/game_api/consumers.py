@@ -12,7 +12,7 @@ from game_engine import Color, GameOver, IllegalMove, card_from_dict, card_to_di
 
 from . import presence, spectators
 from .background import run_in_background
-from .models import Game, GamePlayer, GameStatus, ChatMessage, ChatMessageType, Conversation, ConversationRead, Tournament
+from .models import Game, GamePlayer, GameStatus, ChatMessage, ChatMessageType, Conversation, ConversationRead, Tournament, MODIFIER_FIELDS
 from .serializers import ChatMessageSerializer
 
 User = get_user_model()
@@ -360,6 +360,19 @@ class GameConsumer(WebsocketConsumer):
 			"winner_id": state.winner_id,
 			"turn_timer_seconds": game.turn_timer_seconds,
 			"turn_started_at": game.turn_started_at.isoformat() if game.turn_started_at else None,
+			# The house rules this room was created with. The engine already
+			# enforces them — `GameViewSet.start` passes them as `GameSettings`
+			# — but the table has to *offer* the two that need the player to act:
+			# Jump in lets a card leave the hand out of turn, and Seven swap and
+			# Zero rotate need a target picked. Without this the client cannot
+			# know they are on, so it never opens either affordance and the rule
+			# the host switched on is unreachable, however well the server
+			# supports it.
+			#
+			# All five are sent, always, and never only the enabled ones: a rule
+			# that is off is as much part of the answer as one that is on, and a
+			# missing key and `false` have to mean the same thing to the client.
+			"settings": {name: getattr(game, name) for name in MODIFIER_FIELDS},
 			"players": players,
 		}
 

@@ -96,6 +96,49 @@ class ConnectionTests(TransactionTestCase):
 
 		await communicator.disconnect()
 
+	async def test_game_state_carries_every_house_rule_even_when_all_are_off(self):
+		# All five keys, always. The client treats a missing key and False the
+		# same way, so an incomplete object would be a silent lie rather than an
+		# error, and the table would just never offer the rule.
+		alice = await sync_to_async(User.objects.create_user)(username="alice", email="a@example.com", password="x")
+		bob = await sync_to_async(User.objects.create_user)(username="bob", email="b@example.com", password="x")
+		game, _, _ = await sync_to_async(_make_started_game)(alice, bob)
+
+		communicator, _ = await _connect_to_game(alice, game)
+		message = await communicator.receive_json_from()
+
+		self.assertEqual(
+			message["settings"],
+			{
+				"draw_stacking": False,
+				"jump_in": False,
+				"draw_until_playable": False,
+				"seven_swap": False,
+				"zero_swap": False,
+			},
+		)
+
+		await communicator.disconnect()
+
+	async def test_game_state_reports_the_house_rules_the_room_was_created_with(self):
+		# The engine is already given these at start; this is the client being
+		# told, which is what decides whether the hand is playable out of turn
+		# and whether the swap prompt can open at all.
+		alice = await sync_to_async(User.objects.create_user)(username="alice", email="a@example.com", password="x")
+		bob = await sync_to_async(User.objects.create_user)(username="bob", email="b@example.com", password="x")
+		game, _, _ = await sync_to_async(_make_started_game)(alice, bob, jump_in=True, seven_swap=True)
+
+		communicator, _ = await _connect_to_game(alice, game)
+		message = await communicator.receive_json_from()
+
+		self.assertTrue(message["settings"]["jump_in"])
+		self.assertTrue(message["settings"]["seven_swap"])
+		self.assertFalse(message["settings"]["zero_swap"])
+		self.assertFalse(message["settings"]["draw_stacking"])
+		self.assertFalse(message["settings"]["draw_until_playable"])
+
+		await communicator.disconnect()
+
 	async def test_connecting_marks_the_player_connected_in_the_database(self):
 		alice = await sync_to_async(User.objects.create_user)(username="alice", email="a@example.com", password="x")
 		bob = await sync_to_async(User.objects.create_user)(username="bob", email="b@example.com", password="x")
