@@ -9,7 +9,8 @@ from rest_framework import serializers
 from . import spectators
 from .models import (
 	Friendship, Game, GamePlayer, GameSpectator, GameStatus, ChatMessage, Conversation,
-	ConversationRead, Tournament, TournamentParticipant, MODIFIER_FIELDS as _MODIFIER_FIELDS
+	ConversationRead, Tournament, TournamentParticipant, MODIFIER_FIELDS as _MODIFIER_FIELDS,
+	tournament_converges
 )
 
 User = get_user_model()
@@ -31,10 +32,30 @@ class PasswordResetSerializer(BasePasswordResetSerializer):
 		return {"url_generator": _frontend_password_reset_url}
 
 class PublicProfileSerializer(serializers.ModelSerializer):
+	# Where they are, not just whether they are here. The chat dock draws four
+	# states and two of them need a room: "In a lobby · 9QTB", "In a game".
+	# `is_online` stays for everything that only asks the yes/no question.
+	presence = serializers.SerializerMethodField()
+
 	class Meta:
 		model = User
-		fields = ("public_id", "username", "display_name", "avatar_url", "is_online", "date_joined")
+		fields = ("public_id", "username", "display_name", "avatar_url", "is_online", "presence", "date_joined")
 		read_only_fields = fields
+
+	def get_presence(self, user):
+		from . import consumers
+
+		# The place is asked for *first*, and it outranks `is_online`.
+		#
+		# `is_online` means "last_seen_at is under five minutes old", and
+		# `last_seen_at` is only written when a presence socket opens or closes —
+		# there is no heartbeat — so somebody who has been playing for ten
+		# minutes reports as offline. A connected seat in a live room is direct
+		# evidence to the contrary, and direct evidence wins.
+		status, room_code = consumers.presence_state(user.pk)
+		if status != "online":
+			return {"status": status, "room_code": room_code}
+		return {"status": "online" if user.is_online else "offline", "room_code": None}
 
 class UserDetailsSerializer(BaseUserDetailsSerializer):
 	avatar = serializers.ImageField(write_only=True, required=False, allow_null=True)
@@ -242,13 +263,32 @@ class TournamentMatchSerializer(serializers.ModelSerializer):
 		fields = ("public_id", "tournament_round", "status", "players", "winner", "finished_at")
 		read_only_fields = fields
 
+# Every setting a tournament was created with. Named once, used by all three
+# serializers below, so a field cannot be accepted on create and then go missing
+# from the answer — which is how the frontend would end up unable to draw the
+# structure it had just asked for.
+TOURNAMENT_CONFIG_FIELDS = (
+	"format", "players_per_table", "advance_per_table", "starting_hand_size",
+	"turn_timer_seconds", "final_best_of_3", "matches_per_round", "matches_in_final",
+	*_MODIFIER_FIELDS,
+)
+
+
 class TournamentListSerializer(serializers.ModelSerializer):
 	created_by = PublicProfileSerializer(read_only=True)
 	participant_count = serializers.SerializerMethodField()
+	# The short readable code, under the name the frontend reads it by. A UUID
+	# cannot go in a badge or be said out loud, so `public_id` stays for links
+	# that machines follow and this is the one people use.
+	id = serializers.CharField(source="join_code", read_only=True)
 
 	class Meta:
 		model = Tournament
-		fields = ("public_id", "name", "created_by", "status", "max_participants", "participant_count", "created_at")
+		fields = (
+			"id", "public_id", "name", "created_by", "status",
+			"max_participants", "participant_count", "created_at",
+			*TOURNAMENT_CONFIG_FIELDS,
+		)
 		read_only_fields = fields
 
 	def get_participant_count(self, tournament):
@@ -273,7 +313,28 @@ class TournamentDetailSerializer(TournamentListSerializer):
 class TournamentCreateSerializer(serializers.ModelSerializer):
 	class Meta:
 		model = Tournament
-		fields = ("name", "max_participants")
+		fields = ("name", "max_participants", *TOURNAMENT_CONFIG_FIELDS)
+		extra_kwargs = {field: {"required": False} for field in TOURNAMENT_CONFIG_FIELDS}
+
+	def validate(self, attrs):
+		"""
+		Refuse a tournament that can never reach one final table.
+
+		The create dialog draws this same conclusion live, from
+		`computeStructure()`, and shows it as a warning instead of a preview. The
+		check belongs here too: a host who ignores the warning, or anything that
+		is not the dialog, would otherwise create a tournament that runs for ever.
+		"""
+		players = attrs.get("max_participants") or getattr(self.instance, "max_participants", 0)
+		per_table = attrs.get("players_per_table", Tournament._meta.get_field("players_per_table").default)
+		advance = attrs.get("advance_per_table", Tournament._meta.get_field("advance_per_table").default)
+
+		if players and not tournament_converges(players, per_table, advance):
+			raise serializers.ValidationError(
+				"With this table size and this many players advancing, the tournament never "
+				"reduces to a single final table."
+			)
+		return attrs
 
 class LiveGameSerializer(GameListSerializer):
 	pass

@@ -83,12 +83,44 @@ class AcceptDeclineTests(FriendshipTestCase):
 		response = self.client.post(reverse("friendship-accept", args=[self.friendship.pk]))
 		self.assertEqual(response.status_code, 404)
 
-	def test_addressee_can_decline(self):
+	def test_addressee_can_decline_and_the_row_goes(self):
+		# It used to be kept as DECLINED, which was a dead end for both people
+		# for good: `create` refuses a new request while any row exists between
+		# two users, and the Friends page never lists declined ones — so neither
+		# could see what was in the way, let alone clear it.
 		self.login(self.bob)
 		response = self.client.post(reverse("friendship-decline", args=[self.friendship.pk]))
 		self.assertEqual(response.status_code, 200)
-		self.friendship.refresh_from_db()
-		self.assertEqual(self.friendship.status, FriendshipStatus.DECLINED)
+		self.assertFalse(Friendship.objects.filter(pk=self.friendship.pk).exists())
+
+	def test_a_declined_request_can_be_sent_again(self):
+		self.login(self.bob)
+		self.client.post(reverse("friendship-decline", args=[self.friendship.pk]))
+		self.client.logout()
+
+		self.login(self.alice)
+		response = self.client.post(reverse("friendship-list"), {"username": "bob"})
+		self.assertEqual(response.status_code, 201)
+
+	def test_the_person_who_declined_can_ask_the_other_way_round(self):
+		# `create` looks for a row in either direction, so bob asking alice has
+		# to work too — it is the likelier of the two, after second thoughts.
+		self.login(self.bob)
+		self.client.post(reverse("friendship-decline", args=[self.friendship.pk]))
+		response = self.client.post(reverse("friendship-list"), {"username": "alice"})
+		self.assertEqual(response.status_code, 201)
+
+	def test_a_declined_row_left_over_from_before_no_longer_blocks(self):
+		# Every database still holds rows made while declining kept them. They
+		# would block those two people for ever, so `create` clears one rather
+		# than waiting on a migration that may never be run against their data.
+		self.friendship.status = FriendshipStatus.DECLINED
+		self.friendship.save(update_fields=["status"])
+
+		self.login(self.alice)
+		response = self.client.post(reverse("friendship-list"), {"username": "bob"})
+		self.assertEqual(response.status_code, 201)
+		self.assertFalse(Friendship.objects.filter(pk=self.friendship.pk).exists())
 
 	def test_cannot_accept_an_already_accepted_request(self):
 		self.friendship.status = FriendshipStatus.ACCEPTED

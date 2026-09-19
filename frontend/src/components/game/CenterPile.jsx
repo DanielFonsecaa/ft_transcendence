@@ -8,9 +8,10 @@ const STACK_ANSWER = { draw_two: "+2", wild_draw_four: "+4" }
 // The middle of the table: the draw pile on the left, the top of the discard pile
 // on the right, and the stacked-draw badge underneath when one is running.
 //
-// Three things here are about a field that may not arrive. `draw_stack` is not
-// sent by today's backend at all (§2.3), so every use of it is optional-chained
-// and the badge simply doesn't render. The colour in play is written out in words
+// `draw_stack` has been sent since 2026-09-18 (§2.3); before that it arrived
+// nowhere and the badge simply never rendered. Every use stays optional-chained
+// anyway — a client outlives the server it was built against, and a missing
+// badge is a better failure than a crash. The colour in play is written out in words
 // as well as painted as a glow, because after a wild the card is black and a glow
 // alone says nothing to a colour-blind player.
 function CenterPile({ game, canDraw, onDraw, compact = false }) {

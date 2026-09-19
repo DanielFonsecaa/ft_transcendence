@@ -14,8 +14,8 @@ const SEAT_CIRCLE = "clamp(46px,13vw,74px)"
 // A seat is only a button when there is something to do with it. A taken seat has
 // no action, so it is plain content — the old lobby made every seat a disabled
 // button, which has a screen reader announcing "button, unavailable" all the way
-// round the table. "Sit here" needs `POST /games/<code>/seat/`, which doesn't
-// exist yet (§1.2), so today the click comes back as an error under the table.
+// round the table. "Sit here" posts to `/games/<code>/seat/`, which has existed
+// since 2026-09-18 (§1.2) — before that the click only ever came back a 404.
 function LobbyTable({ seats, mySeat, onSeat }) {
 	const count = seats.length || 1
 

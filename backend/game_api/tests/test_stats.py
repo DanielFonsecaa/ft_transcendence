@@ -120,6 +120,60 @@ class LeaderboardTests(TestCase):
 		self.assertEqual(usernames[0], "bob")
 		self.assertEqual(usernames[1], "alice")
 
+	def test_sorting_by_win_rate_beats_sorting_by_wins(self):
+		# The whole point of sorting on the server. bob wins the most but also
+		# loses one, so 2/3; carol wins her only game, so 1/1. The two orders
+		# must genuinely differ, or the test would pass with the parameter
+		# ignored — which is exactly the bug this fixes.
+		_finished_game(winner=self.bob, others=[self.alice])
+		_finished_game(winner=self.bob, others=[self.alice])
+		_finished_game(winner=self.carol, others=[self.alice, self.bob])
+
+		by_wins = self.client.get(reverse("leaderboard"), {"ordering": "wins"})
+		self.assertEqual(by_wins.data["results"][0]["username"], "bob")
+
+		by_rate = self.client.get(reverse("leaderboard"), {"ordering": "win_rate"})
+		self.assertEqual(by_rate.data["results"][0]["username"], "carol")
+		self.assertEqual(by_rate.data["results"][0]["win_rate"], 100.0)
+
+	def test_sorting_by_games_counts_games_not_wins(self):
+		# alice loses everything and has played the most; she comes first here
+		# and last by wins.
+		_finished_game(winner=self.bob, others=[self.alice])
+		_finished_game(winner=self.bob, others=[self.alice])
+		_finished_game(winner=self.carol, others=[self.alice])
+
+		response = self.client.get(reverse("leaderboard"), {"ordering": "games"})
+		self.assertEqual(response.data["results"][0]["username"], "alice")
+		self.assertEqual(response.data["results"][0]["games_played"], 3)
+
+	def test_someone_who_never_played_sorts_last_by_win_rate(self):
+		# A rate of 0/0 must be 0.0 and not blow up the query.
+		_finished_game(winner=self.alice, others=[self.bob])
+
+		response = self.client.get(reverse("leaderboard"), {"ordering": "win_rate"})
+		usernames = [e["username"] for e in response.data["results"]]
+		self.assertEqual(usernames[0], "alice")
+		self.assertEqual(usernames[-1], "carol")
+
+	def test_an_unknown_ordering_falls_back_instead_of_failing(self):
+		# A cached client can be a version behind, and a leaderboard in the
+		# default order beats an error page.
+		_finished_game(winner=self.bob, others=[self.alice])
+
+		response = self.client.get(reverse("leaderboard"), {"ordering": "height"})
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data["results"][0]["username"], "bob")
+
+	def test_the_order_is_total_so_a_tie_cannot_shuffle_between_pages(self):
+		# Three players, no games, everything equal — without a last unique key
+		# the database may return them in any order, and someone paging through
+		# would see a player twice or not at all.
+		first = [e["username"] for e in self.client.get(reverse("leaderboard")).data["results"]]
+		second = [e["username"] for e in self.client.get(reverse("leaderboard")).data["results"]]
+		self.assertEqual(first, second)
+		self.assertEqual(first, sorted(first))
+
 	def test_includes_users_who_have_never_played(self):
 		response = self.client.get(reverse("leaderboard"))
 		entries = {e["username"]: e for e in response.data["results"]}

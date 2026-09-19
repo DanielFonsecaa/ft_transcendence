@@ -51,9 +51,29 @@ function LobbyHeader({ lobby, connected }) {
 				<span className="sr-only">Copy room code</span>
 				<span className="font-mono text-[11px] tracking-[0.14em] text-muted">ROOM CODE</span>
 				<span className="font-mono text-[17px] font-bold tracking-[0.2em] text-white">{lobby.code ?? "—"}</span>
-				<span aria-hidden="true" className="font-mono text-[13px] text-muted">
-					{copied ? "copied!" : "⧉"}
-				</span>
+				{/* Drawn, not typed: this used to be "⧉" (U+29C9) in Space Mono, which
+				    has no such glyph, so the copy affordance rendered as an empty box.
+				    Two offset rounded squares, in the same line style as the header's
+				    icons. */}
+				{copied ? (
+					<span aria-hidden="true" className="font-mono text-[13px] text-muted">copied!</span>
+				) : (
+					<svg
+						width="15"
+						height="15"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth={1.3}
+						strokeLinecap="round"
+						strokeLinejoin="round"
+						aria-hidden="true"
+						className="flex-none text-muted"
+					>
+						<rect x="9" y="9" width="11" height="11" rx="2.5" />
+						<path d="M5 15V6a2.5 2.5 0 0 1 2.5-2.5H15" />
+					</svg>
+				)}
 			</button>
 			<span aria-live="polite" className="sr-only">
 				{copied ? "Room code copied" : ""}

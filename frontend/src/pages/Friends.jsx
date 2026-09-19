@@ -6,12 +6,17 @@ import Button from "@/components/ui/Button.jsx"
 import PageHeader from "@/components/ui/PageHeader.jsx"
 import { ErrorMessage, Loading } from "@/components/ui/Message.jsx"
 import { acceptRequest, blockUser, declineRequest, groupFriendships, listFriendships, removeFriendship } from "@/lib/friends.js"
+import { useChat } from "@/components/chat/ChatProvider.jsx"
 import { useAuth } from "@/lib/auth.jsx"
 
 const ACTION = "px-4 py-2.5 text-sm"
 
 function Friends() {
 	const { user } = useAuth()
+	// Bumped whenever the presence socket says a friendship changed, so a request
+	// that arrives while this page is open lands in the list instead of only on
+	// the header's badge.
+	const { friendshipVersion } = useChat()
 
 	// Only the server's answer is kept. The four groups are worked out on every
 	// render instead of being stored, so they can never disagree with `rows`.
@@ -38,7 +43,7 @@ function Friends() {
 		void (async () => {
 			await load()
 		})()
-	}, [load])
+	}, [load, friendshipVersion])
 
 	// Every button follows the same shape: lock the row, run it, reload, unlock.
 	const act = async (id, run) => {

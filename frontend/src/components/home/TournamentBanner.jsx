@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { Link } from "react-router"
 import { FORMATS } from "@/lib/tournamentStructure.js"
-// Still mock data until the tournament backend exists, but it now comes through
+// Real data since §5 landed; it comes through
 // the same `listTournaments()` the tournament pages use (area 06), so there is
 // one list and one shape. It is async because the real endpoint will be.
 import { listTournaments } from "@/lib/tournaments.js"

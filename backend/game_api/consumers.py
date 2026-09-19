@@ -92,16 +92,9 @@ class PresenceConsumer(WebsocketConsumer):
 			self._broadcast_to_friends("offline")
 
 	def _broadcast_to_friends(self, status):
-		for friend_id in self.user.accepted_friend_ids():
-			async_to_sync(self.channel_layer.group_send)(
-				f"presence_{friend_id}",
-				{
-					"type": "presence.update",
-					"public_id": str(self.user.public_id),
-					"username": self.user.username,
-					"status": status,
-				},
-			)
+		# "online" here means "work out where they actually are" — they may have
+		# opened the app straight into a room.
+		broadcast_presence(self.user.pk, status=status if status == "offline" else None)
 
 	def presence_update(self, event):
 		self.send(text_data=json.dumps({
@@ -109,6 +102,7 @@ class PresenceConsumer(WebsocketConsumer):
 			"public_id": event["public_id"],
 			"username": event["username"],
 			"status": event["status"],
+			"room_code": event.get("room_code"),
 		}))
 
 	def friendship_update(self, event):
@@ -228,6 +222,84 @@ def _watch_turns(game_id):
 		with _turn_watchers_lock:
 			_turn_watchers.discard(game_id)
 
+def _draw_stack(state):
+	"""
+	`{"card_type": "draw_two", "count": 6}` while a stack is running, else None.
+
+	Without it the pile could never read "Draw +6" and the "+6 incoming · ANSWER
+	WITH +2 OR DRAW" badge could never appear — the stack was enforced perfectly
+	and shown nowhere, so the one thing a player needed to know to answer it was
+	the one thing the table could not say.
+	"""
+	stack = state.modifier_state.get("draw_stack")
+	if not stack:
+		return None
+	return {"card_type": stack["type"], "count": stack["count"]}
+
+# --- Presence with a place --------------------------------------------------
+#
+# The chat dock draws four states — Offline, Online, In a lobby and In a game —
+# and the last two carry the room code, as in "In a lobby · 9QTB". Presence used
+# to say only online or offline, so two of the four were unreachable: the client
+# had nothing to build them from.
+#
+# The place is *derived*, never stored. A seat that is connected to a room is
+# what being in a room means, and `GameConsumer` already keeps `is_connected`
+# honest at both ends — so there is one truth, the same one the lobby draws, and
+# no second copy in Redis to go stale when a process dies. Spectators are not
+# counted: `GameSpectator` has no connected flag, so a row left behind by
+# somebody who closed the tab would report them watching for ever, and a wrong
+# place is worse than none.
+
+def presence_state(user_id):
+	"""`("online" | "lobby" | "game", room_code | None)` for a user who is online."""
+	seat = (
+		GamePlayer.objects
+		.filter(
+			user_id=user_id,
+			is_connected=True,
+			game__status__in=(GameStatus.PENDING, GameStatus.IN_PROGRESS),
+		)
+		.select_related("game")
+		.first()
+	)
+	if seat is None:
+		return "online", None
+	place = "lobby" if seat.game.status == GameStatus.PENDING else "game"
+	return place, seat.game.join_code
+
+def broadcast_presence(user_id, status=None):
+	"""
+	Tell this person's friends where they are.
+
+	`status` forces a value — "offline" on the way out, when the seat rows say
+	nothing useful. Otherwise the place is worked out from the rooms they are
+	sitting in.
+	"""
+	from channels.layers import get_channel_layer
+
+	user = get_user_model().objects.filter(pk=user_id).first()
+	if user is None:
+		return
+
+	if status == "offline":
+		place, room_code = "offline", None
+	else:
+		place, room_code = presence_state(user_id)
+
+	channel_layer = get_channel_layer()
+	for friend_id in user.accepted_friend_ids():
+		async_to_sync(channel_layer.group_send)(
+			f"presence_{friend_id}",
+			{
+				"type": "presence.update",
+				"public_id": str(user.public_id),
+				"username": user.username,
+				"status": place,
+				"room_code": room_code,
+			},
+		)
+
 class GameConsumer(WebsocketConsumer):
 	def connect(self):
 		user = self.scope["user"]
@@ -258,6 +330,9 @@ class GameConsumer(WebsocketConsumer):
 
 		async_to_sync(self.channel_layer.group_add)(self.group_name, self.channel_name)
 		self.accept()
+
+		# Their friends' docks now say "In a lobby · 9QTB" instead of "Online".
+		broadcast_presence(self.user.pk)
 
 		with transaction.atomic():
 			game = Game.objects.select_for_update().get(pk=self.game_id)
@@ -295,6 +370,9 @@ class GameConsumer(WebsocketConsumer):
 			broadcast_game_update(game)
 		except Game.DoesNotExist:
 			pass
+
+		# Back to plain "Online" — or to another room, if they have two tabs open.
+		broadcast_presence(self.user.pk)
 
 	def receive(self, text_data):
 		if getattr(self, "is_done", False):
@@ -387,26 +465,68 @@ class GameConsumer(WebsocketConsumer):
 		is_spectator = player is None
 
 		if game.status == GameStatus.PENDING:
+			# The shape here is the one `frontend/src/lib/fakeGameState.js` was
+			# built against, and that file is the contract (ADR 0001). Three
+			# things used to be wrong rather than merely missing, and each one
+			# cost the Lobby a whole feature:
+			#
+			#  - a seat nested its person under `user`, so every name, photo and
+			#    host tag on screen read `undefined`;
+			#  - `spectators` was the Redis *count*, so the panel could say "2/6"
+			#    but never who was watching;
+			#  - `settings` carried three keys, so the room's hand size showed a
+			#    dash and the house rules always read "Classic rules only", in a
+			#    room that had three of them switched on.
+			#
+			# A seat is therefore flat, and the room says its own name and code —
+			# without them the title was empty and the ROOM CODE button copied
+			# nothing, which is how you tell somebody where to meet you.
 			player_by_seat = {p.seat: p for p in game.players.select_related("user").all()}
 			seats = []
 			for i in range(game.max_seats):
 				p = player_by_seat.get(i)
-				if p:
-					seats.append({"seat_index": p.seat, "user": {"public_id": str(p.user.public_id), "username": p.user.username,}, "is_connected": p.is_connected,})
-				else:
+				if p is None:
 					seats.append(None)
+					continue
+				# `GamePlayer.user` is nullable — SET_NULL when an account is
+				# deleted, and an AI seat never had one — so nothing here may
+				# reach through it without asking. Before this, a player deleting
+				# their account while sitting in a room took the whole lobby down
+				# with an AttributeError, for everybody in it.
+				seats.append({
+					"public_id": str(p.user.public_id) if p.user else None,
+					"username": p.user.username if p.user else (p.display_name or "Player"),
+					"avatar_url": p.user.avatar_url if p.user else get_user_model().DEFAULT_AVATAR_URL,
+					# Derived from the room's host, not stored on the seat: one
+					# place to look, so the two can never disagree.
+					"is_host": p.user_id is not None and p.user_id == game.host_id,
+					"is_connected": p.is_connected,
+				})
+
+			# Who is watching, by name. `GameSpectator` is the roster — the Redis
+			# counter counts sockets, which is a different question and cannot
+			# answer this one.
+			watching = [
+				{"username": s.user.username}
+				for s in game.spectators.select_related("user").all()
+			]
 
 			return {
 				"type": "lobby",
 				"status": game.status,
+				"name": game.name,
+				"code": game.join_code,
 				"host": game.host.username,
 				"seats": seats,
 				"settings": {
 					"max_seats": game.max_seats,
+					"starting_hand_size": game.starting_hand_size,
 					"turn_timer_seconds": game.turn_timer_seconds,
 					"allow_spectators": game.allow_spectators,
+					**{name: getattr(game, name) for name in MODIFIER_FIELDS},
 				},
-				"spectators": spectators.spectator_count(game.pk),
+				"spectators": watching,
+				"max_spectators": settings.GAME_MAX_SPECTATORS,
 				"your_seat": player.seat if player else None,
 				"you_are_spectating": is_spectator,
 				"is_spectator": is_spectator,
@@ -417,18 +537,27 @@ class GameConsumer(WebsocketConsumer):
 
 		state = state_from_dict(game.state)
 		my_player_id = str(player.pk) if player is not None else None
-		connection_by_id = {
-			str(pk): is_connected
-			for pk, is_connected in GamePlayer.objects.filter(game=game).values_list("pk", "is_connected")
+		# One query for both things a seat needs from the database: whether they
+		# are still connected, and the face to draw. The engine's state knows
+		# neither — it holds the game, not the people playing it.
+		default_avatar = get_user_model().DEFAULT_AVATAR_URL
+		seat_by_id = {
+			str(gp.pk): gp
+			for gp in GamePlayer.objects.filter(game=game).select_related("user")
 		}
 
 		players = []
 		for p in state.players:
+			gp = seat_by_id.get(p.player_id)
 			entry = {
 				"player_id": p.player_id,
 				"name": p.name,
 				"hand_count": len(p.hand),
-				"is_connected": connection_by_id.get(p.player_id, False),
+				"is_connected": gp.is_connected if gp else False,
+				# `User.avatar_url` already falls back to the site default, so an
+				# account with no picture and a seat with no account both draw
+				# the same face instead of a broken image.
+				"avatar_url": gp.user.avatar_url if (gp and gp.user) else default_avatar,
 			}
 			if p.player_id == my_player_id:
 				entry["hand"] = [card_to_dict(c) for c in p.hand]
@@ -447,6 +576,13 @@ class GameConsumer(WebsocketConsumer):
 			"direction": state.direction.value,
 			"has_drawn_this_turn": state.has_drawn_this_turn,
 			"draw_pile_count": len(state.deck.draw_pile),
+			# The running +2/+4 pile-up, or null when nothing is stacked. The
+			# engine keeps it in `modifier_state` under its own key and calls the
+			# card `type`; the table reads `card_type`, the name every other card
+			# in the payload uses. Renamed here rather than in the engine, which
+			# has its own tests and no business knowing what the client calls
+			# things.
+			"draw_stack": _draw_stack(state),
 			"winner_id": state.winner_id,
 			"turn_timer_seconds": game.turn_timer_seconds,
 			"turn_started_at": game.turn_started_at.isoformat() if game.turn_started_at else None,
@@ -573,7 +709,13 @@ class ChatConsumer(WebsocketConsumer):
 		except (KeyError, Game.DoesNotExist, ValueError):
 			self._send_error("Unknown game.")
 			return
-		if game.status != GameStatus.PENDING:
+		# A room outlives its game (CONTEXT.md), so an invite points at somewhere
+		# to go and not only at a game that has yet to start. "Come and play in my
+		# room" is a reasonable thing to say from a table you are already at —
+		# which is exactly where the design puts an invite button, and where it
+		# could never be pressed while this required PENDING. A finished or
+		# cancelled room is the only one there is no point being sent to.
+		if game.status in (GameStatus.FINISHED, GameStatus.CANCELLED):
 			self._send_error("That game can no longer be joined.")
 			return
 

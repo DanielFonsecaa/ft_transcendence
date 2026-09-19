@@ -1,5 +1,6 @@
 import Avatar from "@/components/ui/Avatar.jsx"
 import { EmptyMessage } from "@/components/ui/Message.jsx"
+import { presenceColor } from "@/lib/chat.js"
 
 const ROW =
 	"flex w-full cursor-pointer items-center gap-2.5 rounded-md border border-white/10 border-l-4 bg-page px-3 py-2.5 text-left transition-colors hover:border-white/30"
@@ -48,9 +49,13 @@ function ChatList({ rows, onOpen, onClose }) {
 							/>
 							<span className="flex min-w-0 flex-1 flex-col gap-0.5">
 								<span className="truncate font-title text-base font-bold text-white">{row.name}</span>
+								{/* An unread message outranks where they are; otherwise the
+								    line takes the colour of the place — a lobby and a game
+								    each get their own, so the four states read apart at a
+								    glance and not only by their words. */}
 								<span
 									className={`truncate font-mono text-[10px] tracking-[0.08em] ${
-										row.unread > 0 ? "text-white" : row.online ? "text-green-soft" : "text-muted"
+										row.unread > 0 ? "text-white" : presenceColor(row.presence)
 									}`}
 								>
 									{row.preview}

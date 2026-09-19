@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Link } from "react-router"
 import AuthCard from "@/components/auth/AuthCard.jsx"
 import OAuthButtons from "@/components/auth/OAuthButtons.jsx"
+import PasswordChecklist from "@/components/auth/PasswordChecklist.jsx"
 import Button from "@/components/ui/Button.jsx"
 import ButtonLink from "@/components/ui/ButtonLink.jsx"
 import FormField from "@/components/ui/FormField.jsx"
@@ -93,12 +94,24 @@ function Register() {
 							onChange={(e) => setEmail(e.target.value)}
 							required
 						/>
-						<PasswordInput
-							value={password}
-							onChange={(e) => setPassword(e.target.value)}
-							placeholder="••••••••"
-							required
-						/>
+						{/* The rules live next to the field being typed, rather than
+						    arriving as a rejection after the round trip. */}
+						<div className="flex flex-col gap-2.5">
+							<PasswordInput
+								value={password}
+								onChange={(e) => setPassword(e.target.value)}
+								placeholder="••••••••"
+								aria-describedby="password-rules"
+								required
+							/>
+							<PasswordChecklist
+								id="password-rules"
+								password={password}
+								username={username}
+								email={email}
+								serverSaid={error}
+							/>
+						</div>
 						<PasswordInput
 							label="CONFIRM PASSWORD"
 							name="confirmPassword"

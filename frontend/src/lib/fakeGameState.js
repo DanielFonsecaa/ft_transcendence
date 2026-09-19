@@ -320,10 +320,11 @@ export const drewThree = gameState({
  * Lobby payloads
  *
  * The exact shape of the `lobby` message in BACKEND_REDESIGN_TASKS.md §1.1, which
- * is the contract the backend has to match — not what it sends today. The real
- * message ships without `name`, `code` and `max_spectators`, with `spectators` as
- * a count and seats nested under `user`, so a real room draws with blank names
- * and no house rules until §1.1 lands. These fixtures stay as they are.
+ * is the contract the backend has to match — and, since 2026-09-18, does: the
+ * real message now carries `name`, `code`, `max_spectators`, `spectators` as a
+ * list of names, seats flat, and `settings` with the hand size and all five
+ * house rules. `backend/game_api/tests/test_lobby_payload.py` asserts this
+ * shape field by field, so the two cannot drift apart again without a red test.
  * ------------------------------------------------------------------------- */
 
 const seat = (username, extra = {}) => ({

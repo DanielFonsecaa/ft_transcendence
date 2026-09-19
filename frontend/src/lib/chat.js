@@ -136,11 +136,40 @@ export function receiveMessage(state, message, { myPublicId, openWith } = {}) {
 // --- the CHATS list ------------------------------------------------------
 
 // Presence has four states in the design — Offline, Online, In a lobby and In a
-// game — but the server only ever sends the first two (BACKEND_REDESIGN_TASKS
-// §7.1). The other two are not missing here so much as never delivered, so the
-// list simply says Online until they are.
-export function presenceLabel(online) {
-	return online ? "Online" : "Offline"
+// game — and since §7.1 the server sends all four, with the room code on the two
+// that have one: "In a lobby · 9QTB".
+//
+// Takes the whole presence object rather than a boolean, because the room code is
+// half the answer. An unknown status reads as Online rather than as itself: a
+// server that grew a fifth state should look ordinary here, not leak a raw enum
+// into the interface.
+const PRESENCE_LABELS = {
+	offline: "Offline",
+	online: "Online",
+	lobby: "In a lobby",
+	game: "In a game",
+}
+
+export function presenceLabel(presence) {
+	// A bare boolean is still accepted: plenty of callers only know yes or no.
+	if (typeof presence === "boolean") return presence ? "Online" : "Offline"
+
+	const status = presence?.status ?? "offline"
+	const label = PRESENCE_LABELS[status] ?? "Online"
+	return presence?.room_code ? `${label} · ${presence.room_code}` : label
+}
+
+// The accent a row's status line is painted in. Being somewhere is worth more
+// than being merely present, so a lobby and a game each get their own.
+const PRESENCE_COLORS = {
+	offline: "text-muted",
+	online: "text-green-soft",
+	lobby: "text-blue-soft",
+	game: "text-yellow",
+}
+
+export function presenceColor(presence) {
+	return PRESENCE_COLORS[presence?.status] ?? "text-muted"
 }
 
 // The one line under a name in the list. An invite carries no body of its own,
@@ -174,9 +203,14 @@ export function chatRows({ friends = [], threads = {}, presence = {}, myPublicId
 	const rows = [...people.entries()].map(([username, person]) => {
 		const thread = threads[username]
 		const last = thread?.messages?.[thread.messages.length - 1]
-		// A live presence frame is always newer than the `is_online` that came
-		// down with the friends list, so it wins when there is one.
-		const online = presence[username] ? presence[username] === "online" : Boolean(person.is_online)
+		// A live presence frame is always newer than the one that came down with
+		// the friends list, so it wins when there is one. Both are the same shape
+		// — `{ status, room_code }` — so neither side has to be special-cased.
+		const where = presence[username] ?? person.presence ?? {
+			status: person.is_online ? "online" : "offline",
+			room_code: null,
+		}
+		const online = where.status !== "offline"
 
 		return {
 			username,
@@ -186,8 +220,9 @@ export function chatRows({ friends = [], threads = {}, presence = {}, myPublicId
 			conversationId: thread?.conversationId ?? null,
 			unread: thread?.unread ?? 0,
 			online,
+			presence: where,
 			lastAt: last?.created_at ?? null,
-			preview: last ? messagePreview(last, last.user?.public_id === myPublicId) : presenceLabel(online),
+			preview: last ? messagePreview(last, last.user?.public_id === myPublicId) : presenceLabel(where),
 		}
 	})
 
@@ -250,7 +285,10 @@ export function alreadyInvited(messages = [], { myPublicId, roomCode } = {}) {
 // Each "no" here mirrors a rule the server already enforces, so the button is
 // never live to be pressed into an error: no invite outside a room, and none to a
 // game that has left PENDING, because `send_game_invite` looks the game up and
-// refuses anything else.
+// refuses anything else. A game already under way is no longer one of those
+// noes: the server takes an invite to a running room too, so the button works
+// from the Game Table — where the design always put it, and where it could never
+// be pressed while an invite had to name a game that had not started.
 //
 // Being offline is deliberately NOT one of those noes. The server is happy to
 // store an invite for somebody who is away — they read it when they come back —
@@ -265,7 +303,7 @@ export function alreadyInvited(messages = [], { myPublicId, roomCode } = {}) {
 // to nothing and the thread below it never jumps up the screen.
 export function inviteAction({ inRoom = false, online = false, joinable = false, invited = false } = {}) {
 	if (!inRoom) return { show: false, disabled: false, label: "Invite to Play", note: "JOIN A ROOM TO INVITE FRIENDS" }
-	if (!joinable) return { show: true, disabled: true, label: "Invite to Play", note: "THIS GAME HAS ALREADY STARTED" }
+	if (!joinable) return { show: true, disabled: true, label: "Invite to Play", note: "THIS GAME IS OVER" }
 	if (invited) return { show: true, disabled: true, label: "Invited", note: "" }
 	return { show: true, disabled: false, label: "Invite to Play", note: online ? "" : "THIS FRIEND IS OFFLINE" }
 }

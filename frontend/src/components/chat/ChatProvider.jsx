@@ -47,6 +47,11 @@ export function ChatProvider({ children }) {
 	// Incoming friend requests I have not answered. The same fetch that feeds the
 	// chat rows already groups them, so the header's badge costs no extra request.
 	const [incomingCount, setIncomingCount] = useState(0)
+	// Ticks on every friendship poke. The dock refetches its own rows below, but
+	// the Friends page keeps its own list and used to load it once on mount — so
+	// an arriving request lit the header badge while the page underneath still
+	// said "No pending requests". Following this lets it catch up too.
+	const [friendshipVersion, setFriendshipVersion] = useState(0)
 	const [presence, setPresence] = useState({})
 	const [typing, setTyping] = useState({})
 	const [error, setError] = useState("")
@@ -197,13 +202,19 @@ export function ChatProvider({ children }) {
 		const handle = openPresenceSocket({
 			onMessage: (data) => {
 				if (data.type === "presence_update") {
-					setPresence((current) => ({ ...current, [data.username]: data.status }))
+					// The whole place, not just the status: "In a lobby" is only
+					// half an answer without the code that follows it.
+					setPresence((current) => ({
+						...current,
+						[data.username]: { status: data.status, room_code: data.room_code ?? null },
+					}))
 				}
 				// The server pokes without saying what changed, so we refetch. The
 				// REST list stays the one authority on what a friendship is, and a
 				// poke we miss costs nothing: the next fetch catches up anyway.
 				if (data.type === "friendship_update") {
 					void load()
+					setFriendshipVersion((v) => v + 1)
 				}
 			},
 		})
@@ -361,6 +372,7 @@ export function ChatProvider({ children }) {
 			threads: chat.threads,
 			unreadTotal: totalUnread(chat.threads),
 			incomingCount,
+			friendshipVersion,
 			openWith,
 			listOpen,
 			tabs,
@@ -381,6 +393,7 @@ export function ChatProvider({ children }) {
 			rows,
 			chat.threads,
 			incomingCount,
+			friendshipVersion,
 			openWith,
 			listOpen,
 			tabs,
@@ -409,7 +422,7 @@ export function useChat() {
 }
 
 // What the room tells the dock so that "Invite to Play" has something to invite
-// to. `joinable` is false once the game has started, because the server only
+// to. `joinable` is false only once the game is over, because the server only
 // accepts an invite to a PENDING game.
 //
 // It is a hook and not a prop because the room page and the dock are not in the

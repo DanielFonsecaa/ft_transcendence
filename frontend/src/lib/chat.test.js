@@ -223,17 +223,46 @@ describe("chatRows", () => {
 	// With nothing said yet there is no preview to show, so the row falls back to
 	// where the person is.
 	it("falls back to the presence label when nothing has been said", () => {
-		const rows = chatRows({ friends, threads: {}, presence: { daniel: "online" }, myPublicId: ME })
+		const presence = { daniel: { status: "online", room_code: null } }
+		const rows = chatRows({ friends, threads: {}, presence, myPublicId: ME })
 		const by = Object.fromEntries(rows.map((r) => [r.username, r]))
 
 		expect(by.daniel).toMatchObject({ online: true, preview: "Online" })
 		expect(by.skipmaster).toMatchObject({ online: false, preview: "Offline" })
 	})
 
+	it("says where someone is, with the room code", () => {
+		const presence = { daniel: { status: "lobby", room_code: "9QTB" } }
+		const rows = chatRows({ friends, threads: {}, presence, myPublicId: ME })
+
+		expect(rows.find((r) => r.username === "daniel")).toMatchObject({
+			online: true,
+			preview: "In a lobby · 9QTB",
+		})
+	})
+
+	it("counts being in a game as being online", () => {
+		const presence = { daniel: { status: "game", room_code: "7F2K" } }
+		const rows = chatRows({ friends, threads: {}, presence, myPublicId: ME })
+
+		expect(rows.find((r) => r.username === "daniel")).toMatchObject({
+			online: true,
+			preview: "In a game · 7F2K",
+		})
+	})
+
+	it("uses the presence that came down with the friends list when no frame has arrived", () => {
+		const loaded = [person("daniel", { is_online: true, presence: { status: "game", room_code: "ABCD" } })]
+		const rows = chatRows({ friends: loaded, threads: {}, myPublicId: ME })
+
+		expect(rows[0].preview).toBe("In a game · ABCD")
+	})
+
 	// A presence frame is newer than the `is_online` the friends list was loaded with.
 	it("lets a live presence frame beat the loaded is_online", () => {
 		const loaded = [person("daniel", { is_online: true })]
-		const rows = chatRows({ friends: loaded, threads: {}, presence: { daniel: "offline" }, myPublicId: ME })
+		const presence = { daniel: { status: "offline", room_code: null } }
+		const rows = chatRows({ friends: loaded, threads: {}, presence, myPublicId: ME })
 
 		expect(rows[0].online).toBe(false)
 	})
@@ -320,11 +349,22 @@ describe("inviteAction", () => {
 
 	// The server refuses an invite to a game that is not PENDING, so the button is
 	// never live to be pressed into that error.
-	it("disables the button once the game has started", () => {
+	it("disables the button once the game is over", () => {
+		// A game merely under way is still somewhere to invite people to: a room
+		// outlives its game and the server takes the invite. Only a finished
+		// room is nowhere worth being sent.
 		expect(inviteAction({ inRoom: true, online: true, joinable: false })).toMatchObject({
 			show: true,
 			disabled: true,
-			note: "THIS GAME HAS ALREADY STARTED",
+			note: "THIS GAME IS OVER",
+		})
+	})
+
+	it("still invites from a table with a game running", () => {
+		expect(inviteAction({ inRoom: true, online: true, joinable: true })).toMatchObject({
+			show: true,
+			disabled: false,
+			label: "Invite to Play",
 		})
 	})
 

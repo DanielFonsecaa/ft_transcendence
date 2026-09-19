@@ -1,15 +1,14 @@
-import { Link } from "react-router"
-
 const BACK =
 	"flex-none rounded-md border-2 border-white px-[26px] py-[15px] font-logo text-[15px] font-bold text-white transition-colors hover:bg-white hover:text-page"
 
 // The end of a game: who won, and the way back to the room.
 //
-// "Back to room" goes to /room/<code>, which is the same URL this table is already
-// on. Until the backend reopens a room after a game (§2.5) the server keeps sending
-// the finished game, so the button lands on the same screen — which is why the
-// design's "Room stays open for a rematch" line is left out for now.
-function ResultPanel({ winner, iWon, roomCode }) {
+// "Back to room" is a button and not a link, because it *acts*: the room has to be
+// reopened before there is anything to go back to (§2.5), and the URL never changes
+// — the code now points at the fresh lobby, so the table simply becomes the lobby
+// again under the same address. Pressing it when somebody else already has is
+// harmless; the server hands back the room they made.
+function ResultPanel({ winner, iWon, onRematch, busy = false }) {
 	const accent = iWon ? "border-t-green" : "border-t-blue"
 	const eyebrow = iWon ? "text-green-soft" : "text-blue-soft"
 	const who = iWon ? "You" : winner
@@ -24,10 +23,11 @@ function ResultPanel({ winner, iWon, roomCode }) {
 					{iWon ? "You won" : `${winner} won`}
 				</h2>
 				<p className="font-mono text-[13px] text-white/70">{who} went out first.</p>
+				<p className="font-mono text-[13px] text-muted">The room stays open for a rematch.</p>
 			</div>
-			<Link to={`/room/${roomCode}`} className={BACK}>
-				Back to room
-			</Link>
+			<button type="button" onClick={onRematch} disabled={busy} className={BACK}>
+				{busy ? "Opening…" : "Back to room"}
+			</button>
 		</section>
 	)
 }

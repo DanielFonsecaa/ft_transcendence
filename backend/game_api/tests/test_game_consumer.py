@@ -139,6 +139,90 @@ class ConnectionTests(TransactionTestCase):
 
 		await communicator.disconnect()
 
+	async def test_a_spectator_leaving_is_taken_off_the_count(self):
+		# Nothing covered this before, which is how a merge could drop the
+		# `unregister_spectator` call and leave the watching count climbing for
+		# ever with nobody noticing. `connect()` counts a spectator in; the point
+		# here is that `disconnect()` counts them back out.
+		from .. import spectators
+
+		alice = await sync_to_async(User.objects.create_user)(username="alice", email="a@example.com", password="x")
+		outsider = await sync_to_async(User.objects.create_user)(username="eve", email="e@example.com", password="x")
+		game = await sync_to_async(Game.objects.create)(host=alice, max_seats=4, starting_hand_size=7)
+		await sync_to_async(GamePlayer.objects.create)(game=game, user=alice, seat=0)
+
+		before = await sync_to_async(spectators.spectator_count)(game.pk)
+
+		communicator, connected = await _connect_to_game(outsider, game)
+		self.assertTrue(connected)
+		self.assertEqual(await sync_to_async(spectators.spectator_count)(game.pk), before + 1)
+
+		await communicator.disconnect()
+		self.assertEqual(await sync_to_async(spectators.spectator_count)(game.pk), before)
+
+	async def test_a_seated_player_leaving_does_not_touch_the_spectator_count(self):
+		from .. import spectators
+
+		alice = await sync_to_async(User.objects.create_user)(username="alice", email="a@example.com", password="x")
+		bob = await sync_to_async(User.objects.create_user)(username="bob", email="b@example.com", password="x")
+		game, _, _ = await sync_to_async(_make_started_game)(alice, bob)
+
+		before = await sync_to_async(spectators.spectator_count)(game.pk)
+		communicator, _ = await _connect_to_game(alice, game)
+		await communicator.disconnect()
+
+		self.assertEqual(await sync_to_async(spectators.spectator_count)(game.pk), before)
+
+	async def test_every_player_at_the_table_carries_a_face(self):
+		# The table draws a photo per seat; without this the whole ring of
+		# players was faceless.
+		alice = await sync_to_async(User.objects.create_user)(username="alice", email="a@example.com", password="x")
+		bob = await sync_to_async(User.objects.create_user)(username="bob", email="b@example.com", password="x")
+		game, _, _ = await sync_to_async(_make_started_game)(alice, bob)
+
+		communicator, _ = await _connect_to_game(alice, game)
+		message = await communicator.receive_json_from()
+
+		self.assertEqual(len(message["players"]), 2)
+		for player in message["players"]:
+			# User.avatar_url falls back to the site default, so this is never
+			# empty and never a broken image.
+			self.assertTrue(player["avatar_url"])
+
+		await communicator.disconnect()
+
+	async def test_a_quiet_table_reports_no_draw_stack(self):
+		alice = await sync_to_async(User.objects.create_user)(username="alice", email="a@example.com", password="x")
+		bob = await sync_to_async(User.objects.create_user)(username="bob", email="b@example.com", password="x")
+		game, _, _ = await sync_to_async(_make_started_game)(alice, bob)
+
+		communicator, _ = await _connect_to_game(alice, game)
+		message = await communicator.receive_json_from()
+
+		self.assertIsNone(message["draw_stack"])
+
+		await communicator.disconnect()
+
+	async def test_a_running_draw_stack_is_reported_with_the_card_that_answers_it(self):
+		# The engine calls the card `type` in its own modifier_state; the table
+		# reads `card_type`, like every other card in the payload.
+		alice = await sync_to_async(User.objects.create_user)(username="alice", email="a@example.com", password="x")
+		bob = await sync_to_async(User.objects.create_user)(username="bob", email="b@example.com", password="x")
+		game, _, _ = await sync_to_async(_make_started_game)(alice, bob, draw_stacking=True)
+
+		def _stack_six():
+			game.state["modifier_state"]["draw_stack"] = {"type": "draw_two", "count": 6}
+			game.save(update_fields=["state"])
+
+		await sync_to_async(_stack_six)()
+
+		communicator, _ = await _connect_to_game(alice, game)
+		message = await communicator.receive_json_from()
+
+		self.assertEqual(message["draw_stack"], {"card_type": "draw_two", "count": 6})
+
+		await communicator.disconnect()
+
 	async def test_connecting_marks_the_player_connected_in_the_database(self):
 		alice = await sync_to_async(User.objects.create_user)(username="alice", email="a@example.com", password="x")
 		bob = await sync_to_async(User.objects.create_user)(username="bob", email="b@example.com", password="x")

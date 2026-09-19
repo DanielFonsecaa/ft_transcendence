@@ -10,13 +10,13 @@ import { isEntered } from "@/lib/tournaments.js"
 // Back is a `<Link>` because it navigates; everything else is a real `<button>`
 // because it acts.
 //
-// The mock guards all of these again (`lib/tournaments.js`), and the messages it
-// refuses with are the backend's own words. A button being disabled here is not
-// the rule — it is the rule made visible.
+// The server guards every one of these again. A button being disabled here is
+// not the rule — it is the rule made visible, and the error it would have
+// returned said out loud before it is provoked.
 // Keyed on status, but read through the `pending` check below rather than
 // directly: `Tournament.status` is a `GameStatus` and can hold any of the four,
 // `cancelled` included (`lib/contracts.test.js` pins that). Only a pending
-// tournament can be joined or started — the mock refuses anything else with
+// tournament can be joined or started — the server refuses anything else with
 // "Registration is closed." — so anything that is not pending gets a note, and a
 // status nobody thought of still cannot produce a live Join button.
 const NOTES = {

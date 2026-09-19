@@ -250,8 +250,9 @@ MEDIA_ROOT = env('DJANGO_MEDIA_ROOT', default=str(BASE_DIR / 'media'))
 
 
 # Background work
-# See game_api.background — threads, not a queue. Tests set this to False so
-# everything stays on one thread.
+# See game_api.background — threads, not a queue. On by default, including in
+# the tests: nothing overrides it, so a background task really does run on its
+# own thread there too. Turn it off to make every task synchronous.
 
 RUN_TASKS_IN_BACKGROUND = env.bool('DJANGO_RUN_TASKS_IN_BACKGROUND', default=True)
 
@@ -259,6 +260,11 @@ RUN_TASKS_IN_BACKGROUND = env.bool('DJANGO_RUN_TASKS_IN_BACKGROUND', default=Tru
 # host (or closes the room, if they were alone) — long enough to survive a
 # page refresh.
 GAME_DISCONNECT_GRACE_SECONDS = env.int('DJANGO_GAME_DISCONNECT_GRACE_SECONDS', default=10)
+
+# How many people may watch one room. A system limit, not a room setting: the
+# Create room dialog does not offer it, so there is no column for it either —
+# the lobby just reports it so the client does not have to keep its own copy.
+GAME_MAX_SPECTATORS = env.int('DJANGO_GAME_MAX_SPECTATORS', default=6)
 
 
 # Email

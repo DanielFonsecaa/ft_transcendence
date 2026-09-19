@@ -32,7 +32,7 @@ const NOTICE_MS = 3200
 // - `arenaHeight`: measured, not guessed. Under COMPACT_HEIGHT the table switches
 //   to its compact set, and under TIGHT_HEIGHT the seats also clear the middle
 //   column, which is where the pile has had to move.
-function GameTable({ game, send, error, roomCode }) {
+function GameTable({ game, send, error, onRematch, rematchBusy }) {
 	const [pending, setPending] = useState(null) // { card, index, pick: "color" | "swap" | "target", at }
 	const [notices, setNotices] = useState([]) // [{ id, text, at }]
 	const [arena, setArena] = useState(null)
@@ -215,7 +215,8 @@ function GameTable({ game, send, error, roomCode }) {
 				<ResultPanel
 					winner={playerById(game, game.winner_id)?.name ?? "Somebody"}
 					iWon={game.winner_id === game.your_player_id}
-					roomCode={roomCode}
+					onRematch={onRematch}
+					busy={rematchBusy}
 				/>
 			)}
 		</section>

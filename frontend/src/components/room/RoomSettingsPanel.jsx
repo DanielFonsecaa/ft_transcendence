@@ -10,13 +10,16 @@ const SPECTATE =
 // what the HTML is for. The house rules are chips (HouseRuleChips, which the
 // tournament pages reuse), never "Optional rules".
 //
-// Everything here copes with a field that hasn't arrived. Today's `lobby` message
-// sends no `starting_hand_size`, no house rules and no `max_spectators`, and sends
-// `spectators` as a count rather than a list (§1.1) — so the count is read from
-// either shape, the limit falls back to the frontend's own MAX_SPECTATORS, and a
-// missing number shows a dash instead of an empty row. "No one's watching." is
-// only ever said when the count agrees: with a count but no list, the heading's
-// "2/6" says it all, and a contradiction would be worse than saying nothing.
+// Everything here copes with a field that hasn't arrived. The backend has sent
+// the full shape since 2026-09-18 (§1.1), so in practice every branch below takes
+// the good path — but they stay: a client is served from a CDN and outlives the
+// server it was built against, so during a deploy it can be talking to the older
+// one. Reading `spectators` as either a list or a count, falling back to the
+// frontend's own MAX_SPECTATORS and showing a dash for a missing number all cost
+// nothing and turn a blank panel into a slightly thinner one. "No one's
+// watching." is only ever said when the count agrees: with a count but no list,
+// the heading's "2/6" says it all, and a contradiction would be worse than
+// saying nothing.
 function RoomSettingsPanel({ lobby, user, onSpectate }) {
 	const settings = lobby.settings ?? {}
 	const list = Array.isArray(lobby.spectators) ? lobby.spectators : []

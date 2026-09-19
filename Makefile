@@ -1,6 +1,23 @@
 COMPOSE = docker compose
 
-.PHONY: all check-env up down re build reset-db logs ps fclean backend-shell frontend-shell db-shell migrate makemigrations test-api test-engine backend-tests superuser
+define CHECK_DRIFT
+from django.apps import apps
+from django.db import connection
+cursor = connection.cursor()
+drifted = False
+for model in apps.get_app_config("game_api").get_models():
+    in_db = {c.name for c in connection.introspection.get_table_description(cursor, model._meta.db_table)}
+    # `f.column` is None for a CompositePrimaryKey, which has no column of its
+    # own — that is TournamentParticipant, and it is not drift.
+    missing = {f.column for f in model._meta.local_fields if f.column} - in_db
+    if missing:
+        drifted = True
+        print(model._meta.db_table, "lacks", sorted(missing))
+print("No drift." if not drifted else "Drifted -- see docs/adr/0003-applied-migrations-are-never-edited.md")
+endef
+export CHECK_DRIFT
+
+.PHONY: all check-env up down re build reset-db logs ps fclean backend-shell frontend-shell db-shell migrate makemigrations check-drift test-api test-engine backend-tests superuser
 
 all: up
 
@@ -51,6 +68,12 @@ migrate:
 
 makemigrations:
 	$(COMPOSE) exec backend python manage.py makemigrations
+
+# Every model column the database is missing. An applied migration that was
+# edited afterwards drifts silently until a query fails somewhere unrelated —
+# see docs/adr/0003-applied-migrations-are-never-edited.md.
+check-drift:
+	$(COMPOSE) exec backend python manage.py shell -c "$$CHECK_DRIFT"
 
 test-api:
 	$(COMPOSE) exec backend python manage.py test -v 3 game_api
