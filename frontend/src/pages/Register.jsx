@@ -109,7 +109,6 @@ function Register() {
 								password={password}
 								username={username}
 								email={email}
-								serverSaid={error}
 							/>
 						</div>
 						<PasswordInput

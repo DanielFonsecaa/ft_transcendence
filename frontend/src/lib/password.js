@@ -8,8 +8,12 @@
 //   MinimumLengthValidator           -> "length", min_length=8
 //   NumericPasswordValidator         -> "numeric"
 //   UserAttributeSimilarityValidator -> "similar", max_similarity=0.7
-//   CommonPasswordValidator          -> "common", a 20,000-word list that only
-//                                       the server has. See COMMON below.
+//
+// CommonPasswordValidator is deliberately NOT listed. The server still enforces
+// it — a password from its 20,000-word list is still refused — but the list
+// lives on the server, so the line could never go green while you typed and read
+// as a rule you had failed. A rule that cannot be satisfied in front of you is
+// worse than one you meet at the point of registering, where the error says so.
 
 export const MIN_LENGTH = 8
 export const MAX_SIMILARITY = 0.7
@@ -62,17 +66,7 @@ export function tooSimilar(password, attributes = []) {
 	return false
 }
 
-// The one rule the browser cannot answer. Django's list of the 20,000 commonest
-// passwords lives on the server, and shipping it would add ~200KB to the bundle
-// to duplicate a check the server runs anyway — so this line stays neutral until
-// registering either passes or comes back saying otherwise.
-const COMMON = "common"
-
-// `serverSaid` is the message from a failed registration, so a rule the browser
-// could not judge can still end up red rather than sitting there grey.
-export function passwordRules(password, { username = "", email = "", serverSaid = "" } = {}) {
-	const said = serverSaid.toLowerCase()
-
+export function passwordRules(password, { username = "", email = "" } = {}) {
 	return [
 		{
 			id: "length",
@@ -89,18 +83,12 @@ export function passwordRules(password, { username = "", email = "", serverSaid 
 			label: "Not too close to your username or email",
 			state: password && !tooSimilar(password, [username, email]) ? "met" : "unmet",
 		},
-		{
-			id: COMMON,
-			label: "Not a password everybody uses",
-			// Only the server knows. Red when it says so, otherwise waiting.
-			state: said.includes("too common") ? "failed" : "pending",
-		},
 	]
 }
 
-// Everything the browser can check on its own is satisfied. The submit button
-// does not wait on this — the server is still the authority, and a form that
-// refuses to submit cannot show the server's reason for saying no.
+// Every rule shown is satisfied. The submit button does not wait on this — the
+// server is still the authority, and a form that refuses to submit cannot show
+// the server's reason for saying no.
 export function meetsLocalRules(password, user) {
-	return passwordRules(password, user).every((rule) => rule.state !== "unmet")
+	return passwordRules(password, user).every((rule) => rule.state === "met")
 }

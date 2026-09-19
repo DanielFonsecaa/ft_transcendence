@@ -67,13 +67,10 @@ describe("passwordRules", () => {
 		expect(empty.filter((rule) => rule.state === "met")).toHaveLength(0)
 	})
 
-	it("leaves the common-password rule waiting, since only the server knows", () => {
-		expect(state("correct horse battery", user, "common")).toBe("pending")
-	})
-
-	it("turns the common-password rule red when the server says so", () => {
-		const said = { ...user, serverSaid: "This password is too common." }
-		expect(state("password", said, "common")).toBe("failed")
+	it("shows only the rules the browser can actually settle", () => {
+		// The server's common-password check is deliberately not listed: it could
+		// never go green while you typed, so it read as a rule you had failed.
+		expect(passwordRules("anything", user).map((rule) => rule.id)).toEqual(["length", "numeric", "similar"])
 	})
 })
 
@@ -86,10 +83,5 @@ describe("meetsLocalRules", () => {
 
 	it("is false while a rule is unmet", () => {
 		expect(meetsLocalRules("short", user)).toBe(false)
-	})
-
-	it("does not hold the pending server rule against the password", () => {
-		// "pending" is not "unmet": the form must still be submittable.
-		expect(meetsLocalRules("correct horse battery", user)).toBe(true)
 	})
 })

@@ -16,25 +16,10 @@ const MARKERS = {
 		status: "not done yet",
 		path: <circle cx="12" cy="12" r="5.5" />,
 	},
-	pending: {
-		className: "text-muted",
-		status: "checked when you register",
-		path: <circle cx="12" cy="12" r="5.5" />,
-	},
-	failed: {
-		className: "text-red-soft",
-		status: "no good",
-		path: (
-			<>
-				<path d="M7 7l10 10" />
-				<path d="M17 7 7 17" />
-			</>
-		),
-	},
 }
 
-function PasswordChecklist({ id, password, username, email, serverSaid }) {
-	const rules = passwordRules(password, { username, email, serverSaid })
+function PasswordChecklist({ id, password, username, email }) {
+	const rules = passwordRules(password, { username, email })
 
 	return (
 		<ul id={id} className="flex flex-col gap-1.5">
