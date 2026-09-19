@@ -48,7 +48,11 @@ async function request(method, path, body) {
 	const data = isJson ? await res.json() : await res.text();
 
 	if (!res.ok) {
-		throw new Error(extractErrorMessage(data, res.status));
+		// The status rides along so callers can tell "your session ended" (401/403)
+		// from "the server is having a bad day".
+		const error = new Error(extractErrorMessage(data, res.status));
+		error.status = res.status;
+		throw error;
 	}
 
 	return data;

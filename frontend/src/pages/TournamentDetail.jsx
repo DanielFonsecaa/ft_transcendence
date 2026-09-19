@@ -1,229 +1,113 @@
-import { useState } from "react"
-import { useNavigate, useParams, useLocation } from "react-router"
+import { useEffect, useState } from "react"
+import { useNavigate, useParams } from "react-router"
+import FinalResults from "@/components/tournament/FinalResults.jsx"
+import ParticipantChips from "@/components/tournament/ParticipantChips.jsx"
+import StructurePanel from "@/components/tournament/StructurePanel.jsx"
+import TournamentActions from "@/components/tournament/TournamentActions.jsx"
+import TournamentHeader from "@/components/tournament/TournamentHeader.jsx"
+import TournamentSettingsPanel from "@/components/tournament/TournamentSettingsPanel.jsx"
+import { ErrorMessage, Loading } from "@/components/ui/Message.jsx"
+import { getTournament, joinTournament, leaveTournament, startTournament } from "@/lib/tournaments.js"
+import { computeStructure } from "@/lib/tournamentStructure.js"
 import { useAuth } from "@/lib/auth.jsx"
-import { computeStructure, FORMATS, MAX_RECOMMENDED_ROUNDS } from "@/lib/tournamentStructure.js"
-import { enabledHouseRuleLabels, formatDate, mockTournament, STATUS_COLORS, STATUS_LABELS } from "@/lib/tournaments.js"
 
+// One tournament. The page holds the tournament itself and whether a button is
+// mid-flight; every section draws from that one object.
+//
+// Joining, leaving and starting each answer with the whole fresh tournament, so
+// there is nothing to patch by hand and no second copy of the roster to keep in
+// step — the answer replaces what was on screen.
 function TournamentDetail() {
 	const { id } = useParams()
-	const location = useLocation()
 	const navigate = useNavigate()
 	const { user } = useAuth()
+	// The tournament is kept together with the id it belongs to, in one piece of
+	// state. Whether the page has what it is currently showing is then *derived*
+	// during render — so a route change cannot leave one tournament's roster under
+	// another one's name, and there is no "loading" flag to set from inside an
+	// effect and keep in step.
+	const [data, setData] = useState({ id: null, tournament: null, error: "" })
+	const [actionError, setActionError] = useState("")
+	const [busy, setBusy] = useState(false)
 
-	// TODO backend: when state is missing, fetch it with api.get(`/tournaments/${id}`)
-	const fromNav = location.state?.tournament
-	const tournament = fromNav?.id === id ? fromNav : mockTournament(id)
+	useEffect(() => {
+		// `ignore` is the same guard the Leaderboard uses: StrictMode mounts the
+		// effect twice in development, so a late answer has to check it still
+		// matters.
+		let ignore = false
 
-	const { config } = tournament
-	const format = FORMATS[config.format]
-	const structure = computeStructure(config)
-	const rules = enabledHouseRuleLabels(config)
+		getTournament(id)
+			.then((tournament) => {
+				if (!ignore) setData({ id, tournament, error: "" })
+			})
+			.catch((err) => {
+				if (!ignore) setData({ id, tournament: null, error: err.message })
+			})
 
-	// TODO backend: POST /tournaments/:id/join, then read the live roster back
-	// (and, once matches exist, redirect a signed-up player into their table).
-	const [participants, setParticipants] = useState(tournament.participants ?? [])
-	const [status, setStatus] = useState(tournament.status)
-	const isHost = !!user && tournament.host === user.username
-	const joined = !!user && participants.some((p) => p.name === user.username)
-	const isFull = participants.length >= config.max_participants
-
-	function joinTournament() {
-		if (!user) {
-			navigate("/login", { state: { from: `/tournament/${id}` } })
-			return
+		return () => {
+			ignore = true
 		}
-		if (isHost || joined || isFull) return
-		setParticipants((ps) => [...ps, { name: user.username, avatar: user.avatar ?? "/profile/default.jpg", isHost: false }])
+	}, [id])
+
+	// Every button follows the same shape: lock, run, take the answer, unlock.
+	const act = async (run) => {
+		setBusy(true)
+		setActionError("")
+		try {
+			setData({ id, tournament: await run(), error: "" })
+		} catch (err) {
+			setActionError(err.message)
+		} finally {
+			setBusy(false)
+		}
 	}
 
-	// TODO backend: POST /tournaments/:id/start — the server locks the roster,
-	// draws the first round's tables and moves everyone into their match.
-	function startTournament() {
-		if (!isHost || status !== "pending" || participants.length < 2) return
-		setStatus("in_progress")
+	// Joining needs an account, so a guest goes to the Login first and comes back
+	// here (spec.md, "Sign-in and guests").
+	const join = () => {
+		if (!user) return navigate("/login", { state: { from: `/tournament/${id}` } })
+		return act(() => joinTournament(id))
 	}
+
+	const fresh = data.id === id
+	const tournament = fresh ? data.tournament : null
+	const loadError = fresh ? data.error : ""
+
+	if (loadError)
+		return <ErrorMessage className="py-16 text-center">Couldn't load the tournament. {loadError}</ErrorMessage>
+
+	if (!tournament) return <Loading className="py-16 text-center">Loading...</Loading>
 
 	return (
-		<section className="text-white mx-auto w-[min(88vw,860px)] py-2">
-			<div className="mb-6 flex flex-wrap items-center gap-3">
-				<div>
-					<h2 className="text-2xl font-bold">{tournament.name}</h2>
-					<p className="text-sm text-white/60">
-						{format.label} · <span className={STATUS_COLORS[status]}>{STATUS_LABELS[status]}</span>
-					</p>
-				</div>
-				<span className="ml-auto text-sm text-white/50">{formatDate(tournament.createdAt)}</span>
+		<div className="mx-auto flex w-full max-w-[1240px] flex-col gap-[26px] px-[clamp(16px,4vw,24px)] pb-[clamp(48px,8vw,88px)] pt-[clamp(28px,6vw,56px)]">
+			<TournamentHeader tournament={tournament} />
+
+			<FinalResults tournament={tournament} />
+
+			<ParticipantChips
+				participants={tournament.participants}
+				max={tournament.max_participants}
+				hostUsername={tournament.created_by?.username}
+				myUsername={user?.username}
+			/>
+
+			<div className="flex flex-wrap items-start gap-4">
+				{/* A tournament *is* its own config — the settings sit flat on it — so
+				    the pure structure function reads it with no mapping step. */}
+				<StructurePanel structure={computeStructure(tournament)} />
+				<TournamentSettingsPanel tournament={tournament} />
 			</div>
 
-			{status === "finished" && tournament.results?.length > 0 && (
-				<div className="mb-6">
-					<h3 className="mb-3 text-lg font-bold">Final results</h3>
-					<ol className="flex flex-wrap gap-3">
-						{tournament.results.map((name, i) => (
-							<li
-								key={name}
-								className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2"
-							>
-								<span className="text-xl">{["🥇", "🥈", "🥉"][i]}</span>
-								<span>
-									<span className="block text-xs text-white/50">{["1st", "2nd", "3rd"][i]} place</span>
-									<span className="font-bold">{name}</span>
-								</span>
-							</li>
-						))}
-					</ol>
-				</div>
-			)}
-
-			<div className="mb-6">
-				<h3 className="mb-3 text-lg font-bold">
-					Participants <span className="text-sm font-normal text-white/50">{participants.length}/{config.max_participants}</span>
-				</h3>
-				{participants.length ? (
-					<ul className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-white/10 bg-white/5 p-3">
-						{participants.map((p) => (
-							<li
-								key={p.name}
-								className={`rounded-md px-2 py-0.5 text-xs ${
-									p.name === user?.username ? "bg-blue font-bold text-white" : "bg-white/10 text-white/80"
-								}`}
-							>
-								{p.name}
-								{p.isHost && " · host"}
-							</li>
-						))}
-					</ul>
-				) : (
-					<p className="text-xs text-white/40">No one has signed up yet.</p>
-				)}
-			</div>
-
-			<div className="grid gap-6 sm:grid-cols-[1fr_auto]">
-				<div>
-					<h3 className="mb-3 text-lg font-bold">Structure</h3>
-
-					{!structure.converged ? (
-						<p role="alert" className="text-sm text-red-400">
-							With this table size and this many players advancing, the tournament never reduces to a single final table.
-						</p>
-					) : (
-						<>
-							<ol className="space-y-2">
-								{structure.rounds.map((r) => (
-									<li
-										key={r.round}
-										className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm"
-									>
-										{r.isFinal ? (
-											<span className="font-bold">Final — {r.players} players</span>
-										) : (
-											<span>
-												<span className="font-bold">Round {r.round}</span> — {r.players} players · {r.tables} tables → {r.advancing} advance
-											</span>
-										)}
-									</li>
-								))}
-							</ol>
-							{structure.tooManyRounds && (
-								<p className="mt-2 text-sm text-amber-400">
-									Heads up: {structure.totalRounds} rounds is more than recommended ({MAX_RECOMMENDED_ROUNDS}).
-								</p>
-							)}
-						</>
-					)}
-				</div>
-
-				<aside className="rounded-xl border border-white/10 bg-white/5 p-4 sm:w-64">
-					<h3 className="mb-3 text-lg font-bold">Settings</h3>
-					<dl className="space-y-1 text-sm">
-						<div className="flex justify-between gap-2">
-							<dt className="text-white/90">Players</dt>
-							<dd>{config.max_participants}</dd>
-						</div>
-						<div className="flex justify-between gap-2">
-							<dt className="text-white/90">Players per table</dt>
-							<dd>{config.players_per_table}</dd>
-						</div>
-						<div className="flex justify-between gap-2">
-							<dt className="text-white/90">Advance per table</dt>
-							<dd>{config.advance_per_table}</dd>
-						</div>
-						<div className="flex justify-between gap-2">
-							<dt className="text-white/90">Starting cards</dt>
-							<dd>{config.starting_hand_size}</dd>
-						</div>
-						<div className="flex justify-between gap-2">
-							<dt className="text-white/90">Turn timer</dt>
-							<dd>{config.turn_timer_seconds}s</dd>
-						</div>
-						{config.format === "knockout" ? (
-							<div className="flex justify-between gap-2">
-								<dt className="text-white/90">Final</dt>
-								<dd>{config.final_best_of_3 ? "Best of 3" : "1 match"}</dd>
-							</div>
-						) : (
-							<>
-								<div className="flex justify-between gap-2">
-									<dt className="text-white/90">Matches per round</dt>
-									<dd>{config.matches_per_round}</dd>
-								</div>
-								<div className="flex justify-between gap-2">
-									<dt className="text-white/90">Matches in the final</dt>
-									<dd>{config.matches_in_final}</dd>
-								</div>
-							</>
-						)}
-					</dl>
-
-					<h4 className="mb-2 mt-4 text-sm text-white/90">House rules</h4>
-					{rules.length ? (
-						<ul className="flex flex-wrap gap-1.5">
-							{rules.map((label) => (
-								<li key={label} className="rounded-md bg-blue/80 px-2 py-0.5 text-xs text-white">
-									{label}
-								</li>
-							))}
-						</ul>
-					) : (
-						<p className="text-xs text-white/40">Classic rules only.</p>
-					)}
-				</aside>
-			</div>
-
-			<div className="mt-8 flex items-center justify-center gap-3">
-				<button
-					type="button"
-					onClick={() => navigate("/tournament")}
-					className="rounded-lg border border-white px-5 py-2 font-bold transition-transform hover:scale-105 cursor-pointer"
-				>
-					Back
-				</button>
-				{status === "finished" ? (
-					<span className="rounded-lg border border-white/10 px-5 py-2 text-sm text-white/40">Tournament finished</span>
-				) : status === "in_progress" ? (
-					<span className="rounded-lg border border-white/10 px-5 py-2 text-sm text-white/40">Tournament in progress</span>
-				) : isHost ? (
-					<button
-						type="button"
-						onClick={startTournament}
-						disabled={participants.length < 2}
-						title={participants.length < 2 ? "Needs at least 2 participants to start" : undefined}
-						className="rounded-lg bg-white px-5 py-2 font-bold text-black transition-transform hover:scale-105 cursor-pointer disabled:opacity-40 disabled:hover:scale-100"
-					>
-						Start tournament
-					</button>
-				) : (
-					<button
-						type="button"
-						onClick={joinTournament}
-						disabled={joined || isFull}
-						className="rounded-lg bg-white px-5 py-2 font-bold text-black transition-transform hover:scale-105 cursor-pointer disabled:opacity-40 disabled:hover:scale-100"
-					>
-						{joined ? "You're in" : isFull ? "Tournament full" : "Join tournament"}
-					</button>
-				)}
-			</div>
-		</section>
+			<TournamentActions
+				tournament={tournament}
+				myUsername={user?.username}
+				busy={busy}
+				error={actionError}
+				onJoin={join}
+				onLeave={() => act(() => leaveTournament(id))}
+				onStart={() => act(() => startTournament(id))}
+			/>
+		</div>
 	)
 }
 

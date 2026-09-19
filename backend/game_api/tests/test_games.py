@@ -145,12 +145,23 @@ class LeaveGameTests(GameTestCase):
 		self.game.refresh_from_db()
 		self.assertEqual(self.game.status, GameStatus.CANCELLED)
 
-	def test_cannot_leave_an_in_progress_game(self):
+	def test_leaving_an_in_progress_game_keeps_the_seat_but_goes_quiet(self):
+		# Used to be refused outright, because an absent player stalled the table
+		# for everyone. Since §2.4 the turn timer carries the game past them, so
+		# leaving is allowed — but the seat stays: the hand is dealt, and the
+		# match history and the leaderboard both read these rows.
 		self.game.status = GameStatus.IN_PROGRESS
 		self.game.save()
+		bob_gp, _ = GamePlayer.objects.get_or_create(
+			game=self.game, user=self.bob, defaults={"seat": 1}
+		)
+		GamePlayer.objects.filter(pk=bob_gp.pk).update(is_connected=True)
 		self.login(self.bob)
 		response = self.client.post(reverse("game-leave", args=[self.game.public_id]))
-		self.assertEqual(response.status_code, 400)
+		self.assertEqual(response.status_code, 204)
+		bob_gp.refresh_from_db()
+		self.assertFalse(bob_gp.is_connected)
+		self.assertTrue(GamePlayer.objects.filter(pk=bob_gp.pk).exists())
 
 
 class StartGameTests(GameTestCase):
@@ -197,6 +208,19 @@ class StartGameTests(GameTestCase):
 		self.client.post(reverse("game-start", args=[self.game.public_id]))
 		self.game.refresh_from_db()
 		self.assertEqual(self.game.state["settings"]["enabled_modifiers"], ["jump_in"])
+
+	def test_starting_records_when_the_first_turn_began(self):
+		# `start` used to assign turn_started_at and then save with an
+		# update_fields list that left it out, so it was never written. The
+		# countdown keys off it, and so does the expiry, so the whole first turn
+		# had no timer and could not run out.
+		self.game.turn_timer_seconds = 30
+		self.game.save()
+		GamePlayer.objects.create(game=self.game, user=self.bob, seat=1)
+		self.login(self.alice)
+		self.client.post(reverse("game-start", args=[self.game.public_id]))
+		self.game.refresh_from_db()
+		self.assertIsNotNone(self.game.turn_started_at)
 
 	def test_cannot_start_an_already_started_game(self):
 		GamePlayer.objects.create(game=self.game, user=self.bob, seat=1)

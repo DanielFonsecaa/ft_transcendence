@@ -1,10 +1,16 @@
-import { MODIFIER_TOGGLES } from "./rooms.js"
-import { makeDefaultConfig } from "./tournamentStructure.js"
+import { api } from "./api.js"
 
-export const HOUSE_RULE_TOGGLES = MODIFIER_TOGGLES
+// The tournament API, and the few pure helpers the tournament screens share.
+//
+// This file used to *be* the tournaments: an in-memory store that seeded itself
+// and answered every call from module state, standing in while the backend had
+// no table shape, no settings columns, no short code and nothing writing
+// `final_position`. All of that landed with §5, so the store is gone and the six
+// functions below are the one-line `api` calls it was always going to become.
+//
+// They stayed `async` throughout precisely so this swap would touch this file
+// and nothing else — the pages were written against a server from the first day.
 
-// These are the backend's GameStatus values, not names of our own — the whole
-// API speaks this enum and a second vocabulary would only need translating.
 export const STATUS_LABELS = {
 	pending: "Upcoming",
 	in_progress: "In progress",
@@ -12,20 +18,23 @@ export const STATUS_LABELS = {
 	cancelled: "Canceled",
 }
 
+// Text colours, as theme tokens rather than the design's raw hexes: the design's
+// #6f6f6f/#ffffff80 for a finished tournament misses WCAG AA at this size, and
+// `muted` (#808080) is the darkest gray that passes on a panel (spec.md).
 export const STATUS_COLORS = {
-	pending: "text-blue",
-	in_progress: "text-green",
-	finished: "text-white/50",
-	cancelled: "text-red",
+	pending: "text-blue-soft",
+	in_progress: "text-green-soft",
+	finished: "text-muted",
+	cancelled: "text-red-soft",
 }
 
-export function makeTournamentId(length = 4) {
-	const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-	let id = ""
-	for (let i = 0; i < length; i++) {
-		id += alphabet[Math.floor(Math.random() * alphabet.length)]
-	}
-	return id
+// The stripe along the top of a card. Full-strength colours, not the `-soft`
+// ones: a border only has to reach 3:1.
+export const STATUS_ACCENTS = {
+	pending: "border-t-blue",
+	in_progress: "border-t-green",
+	finished: "border-t-line-strong",
+	cancelled: "border-t-red",
 }
 
 export function formatDate(iso) {
@@ -36,148 +45,58 @@ export function formatDate(iso) {
 	})
 }
 
-// TODO backend: POST /tournaments/ with { name, ...config }, use the
-// returned id instead of a client-generated one.
-export function buildTournament({ name, host, avatar, config }) {
-	return {
-		id: makeTournamentId(),
-		name,
-		host,
-		status: "pending",
-		createdAt: new Date().toISOString(),
-		participants: [{ name: host, avatar: avatar ?? "/profile/default.jpg", isHost: true }],
-		config,
-	}
+// How many places the podium shows. The design's Final results panel has three.
+const PODIUM_PLACES = 3
+
+// 1st, 2nd and 3rd, worked out from `final_position` — the field
+// `TournamentParticipant` already has for it, rather than a separate list of
+// names that could disagree with the roster. Pure, so `FinalResults.jsx` only
+// has to draw what comes back.
+export function finalStandings(tournament) {
+	return (tournament?.participants ?? [])
+		.filter((entry) => Number.isFinite(entry.final_position))
+		.sort((a, b) => a.final_position - b.final_position)
+		.slice(0, PODIUM_PLACES)
 }
 
-function daysFromNow(days) {
-	const d = new Date()
-	d.setDate(d.getDate() + days)
-	return d.toISOString()
+// Whether this person is signed up. Pure, and read from the roster rather than
+// kept as a flag, so it cannot disagree with the chips drawn beside it.
+export function isEntered(tournament, username) {
+	if (!username) return false
+	return (tournament?.participants ?? []).some((entry) => entry.user.username === username)
 }
 
-function mockParticipants(count, host) {
-	return Array.from({ length: count }, (_, i) => ({
-		name: i === 0 ? host : `player_${i + 1}`,
-		avatar: "/profile/default.jpg",
-		isHost: i === 0,
-	}))
+
+// --- the API -----------------------------------------------------------------
+//
+// A tournament is addressed by its short code — `id` in every payload — because
+// that is what the badge shows and what `/tournament/:id` carries. `public_id`
+// is still accepted by the server for links made before the code existed.
+
+export function listTournaments() {
+	return api.get("/tournaments/")
 }
 
-// TODO backend: GET /tournaments/ — results will come from completed match
-// data once round/match play exists, not a fixed list.
-export function mockTournaments() {
-	return [
-		{
-			id: "8K2P",
-			name: "Friday Showdown",
-			host: "daniel",
-			status: "pending",
-			createdAt: daysFromNow(3),
-			participants: mockParticipants(14, "daniel"),
-			config: { ...makeDefaultConfig("knockout"), players: 20 },
-		},
-		{
-			id: "3FPQ",
-			name: "Casual ONE League",
-			host: "feazeved",
-			status: "in_progress",
-			createdAt: daysFromNow(-2),
-			participants: mockParticipants(12, "feazeved"),
-			config: {
-				...makeDefaultConfig("bestof"),
-				max_participants: 12,
-				players_per_table: 4,
-				advance_per_table: 1,
-				matches_per_round: 5,
-			},
-		},
-		{
-			id: "WKWM",
-			name: "Weekend Warmup",
-			host: "guesttt",
-			status: "in_progress",
-			createdAt: daysFromNow(-1),
-			participants: mockParticipants(10, "guesttt"),
-			config: { ...makeDefaultConfig("knockout"), players: 10 },
-		},
-		{
-			id: "9QXR",
-			name: "Lightning Cup",
-			host: "ana",
-			status: "finished",
-			createdAt: daysFromNow(-10),
-			participants: mockParticipants(8, "ana"),
-			results: ["ana", "player_5", "player_3"],
-			config: {
-				...makeDefaultConfig("knockout"),
-				max_participants: 8,
-				players_per_table: 4,
-				advance_per_table: 2,
-				final_best_of_3: false,
-			},
-		},
-		{
-			id: "CHMP",
-			name: "Champions Cup",
-			host: "pedro",
-			status: "finished",
-			createdAt: daysFromNow(-30),
-			participants: mockParticipants(24, "pedro"),
-			results: ["pedro", "player_11", "player_3"],
-			config: {
-				...makeDefaultConfig("bestof"),
-				players: 24,
-				matches_per_round: 3,
-				matches_in_final: 7,
-			},
-		},
-		{
-			id: "L4TN",
-			name: "Mega Tournament",
-			host: "lucas",
-			status: "pending",
-			createdAt: daysFromNow(7),
-			participants: mockParticipants(40, "lucas"),
-			config: { ...makeDefaultConfig("knockout"), players: 64 },
-		},
-		{
-			id: "RB7M",
-			name: "Friends Cup",
-			host: "guest_11",
-			status: "pending",
-			createdAt: daysFromNow(1),
-			participants: mockParticipants(9, "guest_11"),
-			config: { ...makeDefaultConfig("bestof"), players: 16 },
-		},
-		{
-			id: "ZM1K",
-			name: "One Card Masters",
-			host: "daniel",
-			status: "finished",
-			createdAt: daysFromNow(-20),
-			participants: mockParticipants(32, "daniel"),
-			results: ["daniel", "player_19", "player_7"],
-			config: { ...makeDefaultConfig("knockout"), players: 32 },
-		},
-	]
+export function getTournament(id) {
+	return api.get(`/tournaments/${id}/`)
 }
 
-// TODO backend: replace with a real GET /tournaments/:id.
-export function mockTournament(id) {
-	return (
-		mockTournaments().find((t) => t.id === id) ?? {
-			id,
-			name: `Tournament ${id}`,
-			host: "daniel",
-			status: "pending",
-			createdAt: new Date().toISOString(),
-			participants: mockParticipants(1, "daniel"),
-			config: makeDefaultConfig("knockout"),
-		}
-	)
+// The config's keys are already the backend's field names, so it goes over
+// unchanged — the rule `rooms.js` follows too.
+export function createTournament(config) {
+	return api.post("/tournaments/", config)
 }
 
-export function enabledHouseRuleLabels(config = {}) {
-	return HOUSE_RULE_TOGGLES.filter((r) => config[r.key]).map((r) => r.label)
+// All three answer with the whole fresh tournament, so the detail page replaces
+// what is on screen instead of patching a second copy of the roster into step.
+export function joinTournament(id) {
+	return api.post(`/tournaments/${id}/register/`, {})
+}
+
+export function leaveTournament(id) {
+	return api.post(`/tournaments/${id}/unregister/`, {})
+}
+
+export function startTournament(id) {
+	return api.post(`/tournaments/${id}/start/`, {})
 }

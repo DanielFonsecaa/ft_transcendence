@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { CARD_BACK, cardSrc } from "./cards.js"
+import { cardName, CARD_BACK, cardSrc } from "./cards.js"
 
 describe("cardSrc", () => {
 	it("returns the card back when given no card", () => {
@@ -43,5 +43,33 @@ describe("cardSrc", () => {
 	// as unexpectedly passing — change `it.fails` to `it`.
 	it.fails("never builds a path containing 'undefined' for an unknown card_type", () => {
 		expect(cardSrc({ color: "red", card_type: "mystery", value: null })).not.toContain("undefined")
+	})
+})
+
+// The card in words. It reads out the `alt` of the top card, names every button
+// in my hand, and goes into the notices ("Jumped in with Green 4").
+describe("cardName", () => {
+	it("names a number card by colour and value", () => {
+		expect(cardName({ color: "blue", card_type: "number", value: 7 })).toBe("Blue 7")
+	})
+
+	it("names a zero, rather than dropping it", () => {
+		expect(cardName({ color: "yellow", card_type: "number", value: 0 })).toBe("Yellow 0")
+	})
+
+	it("names an action card by its rule name, not its filename", () => {
+		expect(cardName({ color: "red", card_type: "skip", value: null })).toBe("Red Skip")
+		expect(cardName({ color: "green", card_type: "reverse", value: null })).toBe("Green Reverse")
+		expect(cardName({ color: "blue", card_type: "draw_two", value: null })).toBe("Blue Draw Two")
+	})
+
+	// A wild has no colour of its own, so "Wild Wild" would be silly.
+	it("names the two wilds without repeating their colour", () => {
+		expect(cardName({ color: "wild", card_type: "wild", value: null })).toBe("Wild")
+		expect(cardName({ color: "wild", card_type: "wild_draw_four", value: null })).toBe("Wild Draw Four")
+	})
+
+	it("says 'card' when there is no card to name", () => {
+		expect(cardName(null)).toBe("card")
 	})
 })

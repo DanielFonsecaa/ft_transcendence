@@ -1,4 +1,5 @@
 import uuid
+import math
 import random
 import string
 
@@ -17,11 +18,28 @@ def avatar_upload_to(instance, filename):
 JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 JOIN_CODE_LENGTH = 4
 
-def generate_code():
+def _generate_code(model):
     while True:
         code = ''.join(random.choices(JOIN_CODE_ALPHABET, k=JOIN_CODE_LENGTH))
-        if not Game.objects.filter(join_code=code).exists():
+        if not model.objects.filter(join_code=code).exists():
             return code
+
+
+def generate_code():
+    return _generate_code(Game)
+
+
+def generate_tournament_code():
+    """
+    Tournaments need a code people can read out, exactly as rooms do.
+
+    `public_id` is a UUID: it cannot go in the badge on a card, it cannot be
+    said out loud, and `/tournament/<uuid>` is not a link anybody pastes to a
+    friend. Codes are unique per model and the two namespaces are separate —
+    a room and a tournament may share a code, because they are never looked up
+    in the same place.
+    """
+    return _generate_code(Tournament)
 
 
 # --- Enums -------------------------------------------------------------
@@ -142,8 +160,54 @@ class Friendship(models.Model):
         return f'{self.requester_id} -> {self.addressee_id} ({self.status})'
 
 
+# The mirror of `computeStructure()` in frontend/src/lib/tournamentStructure.js.
+#
+# The create dialog previews the rounds live from that function and refuses to
+# promise a shape that never comes down to one table. The server has to reach the
+# same verdict, for anything that is not the dialog — and reach it the same way,
+# or a host would be shown one tournament and given another.
+#
+# `floor(x + 0.5)` on purpose: Python's `round` rounds a half to the nearest even
+# number, so `round(2.5)` is 2 here and 3 in JavaScript.
+HARD_ITERATION_CAP = 64
+
+
+def tables_for(player_count, players_per_table):
+    if player_count <= players_per_table:
+        return 1
+    return max(1, math.floor(player_count / players_per_table + 0.5))
+
+
+def tournament_converges(players, players_per_table, advance_per_table):
+    """Whether these settings ever reduce to a single final table."""
+    per_table = max(2, int(players_per_table or 0))
+    advance = max(1, int(advance_per_table or 0))
+    remaining = max(0, int(players or 0))
+
+    if remaining <= per_table:
+        return True
+
+    for _ in range(HARD_ITERATION_CAP):
+        tables = tables_for(remaining, per_table)
+        advancing = tables * advance
+        if advancing >= remaining:
+            return False
+        if advancing <= per_table:
+            return True
+        remaining = advancing
+    return False
+
+
+class TournamentFormat(models.TextChoices):
+    KNOCKOUT = 'knockout', 'Knockout'
+    BESTOF = 'bestof', 'Best of 3'
+
+
 class Tournament(models.Model):
     public_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    # The short code the design puts in a badge and in the URL. See
+    # generate_tournament_code() for why a UUID could not do this job.
+    join_code = models.CharField(max_length=10, unique=True, db_index=True, default=generate_tournament_code)
     name = models.CharField(max_length=80)
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name='tournaments_created'
@@ -155,6 +219,40 @@ class Tournament(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(blank=True, null=True)
+
+    # How the tournament is shaped and how its games are played. Flat on the
+    # model, not a nested blob, because a tournament *is* its own config: the
+    # structure function and the settings panel both read it directly, with no
+    # unwrapping step (frontend/src/lib/tournamentStructure.js).
+    format = models.CharField(max_length=10, choices=TournamentFormat.choices, default=TournamentFormat.KNOCKOUT)
+    players_per_table = models.PositiveSmallIntegerField(
+        default=5, validators=[MinValueValidator(4), MaxValueValidator(7)]
+    )
+    advance_per_table = models.PositiveSmallIntegerField(
+        default=2, validators=[MinValueValidator(1), MaxValueValidator(3)]
+    )
+    starting_hand_size = models.PositiveSmallIntegerField(
+        default=7, validators=[MinValueValidator(1), MaxValueValidator(20)]
+    )
+    turn_timer_seconds = models.PositiveIntegerField(
+        default=30, validators=[MinValueValidator(5), MaxValueValidator(300)]
+    )
+    # Knockout only.
+    final_best_of_3 = models.BooleanField(default=True)
+    # Best-of only.
+    matches_per_round = models.PositiveSmallIntegerField(default=3)
+    matches_in_final = models.PositiveSmallIntegerField(default=5)
+    # The same five house rules a room has, handed to every game the tournament
+    # creates.
+    draw_stacking = models.BooleanField(default=False)
+    jump_in = models.BooleanField(default=False)
+    draw_until_playable = models.BooleanField(default=False)
+    seven_swap = models.BooleanField(default=False)
+    zero_swap = models.BooleanField(default=False)
+
+    def table_count(self, player_count):
+        """How many tables `player_count` people sit at. See `tables_for`."""
+        return tables_for(player_count, self.players_per_table)
 
     def start(self):
         participants = list(self.participants.select_related('user'))
@@ -168,40 +266,123 @@ class Tournament(models.Model):
         self._start_round(1, [p.user for p in participants])
 
     def _start_round(self, round_number, players):
+        """
+        Seat everybody still in at tables of `players_per_table`.
+
+        The old version paired people off two at a time with `max_seats=2` and a
+        hardcoded hand of seven, which is a knockout ladder and not the thing the
+        host set up: the structure panel promises rounds of tables seating four
+        to seven with one to three advancing from each. Every table now carries
+        the tournament's own settings — hand size, turn timer and the five house
+        rules — so the games are played the way the tournament says.
+        """
         players = list(players)
         random.shuffle(players)
 
-        bye_player = players.pop() if len(players) % 2 == 1 else None
-        for i in range(0, len(players), 2):
-            player_a, player_b = players[i], players[i + 1]
-            game = Game.objects.create(
-                host=player_a, tournament=self, tournament_round=round_number,
-                max_seats=2, starting_hand_size=7,
-            )
-            GamePlayer.objects.create(game=game, user=player_a, seat=0)
-            GamePlayer.objects.create(game=game, user=player_b, seat=1)
+        tables = self.table_count(len(players))
+        # Round-robin rather than slicing, so the tables come out within one
+        # player of each other instead of leaving a last table of one.
+        seatings = [[] for _ in range(tables)]
+        for index, player in enumerate(players):
+            seatings[index % tables].append(player)
 
-        if bye_player is not None:
-            bye_game = Game.objects.create(
-                host=bye_player, tournament=self, tournament_round=round_number,
-                max_seats=2, starting_hand_size=7,
-                status=GameStatus.FINISHED, winner=bye_player, finished_at=timezone.now(),
+        for seating in seatings:
+            if not seating:
+                continue
+            if len(seating) == 1:
+                # Nobody to play: this person goes through without a game. It can
+                # only happen with fewer players than tables, which the structure
+                # never asks for, but a tournament must not stall on it.
+                Game.objects.create(
+                    host=seating[0], tournament=self, tournament_round=round_number,
+                    max_seats=2, starting_hand_size=self.starting_hand_size,
+                    turn_timer_seconds=self.turn_timer_seconds,
+                    status=GameStatus.FINISHED, winner=seating[0], finished_at=timezone.now(),
+                    **{field: getattr(self, field) for field in MODIFIER_FIELDS},
+                )
+                continue
+
+            game = Game.objects.create(
+                host=seating[0], tournament=self, tournament_round=round_number,
+                max_seats=len(seating), starting_hand_size=self.starting_hand_size,
+                turn_timer_seconds=self.turn_timer_seconds,
+                **{field: getattr(self, field) for field in MODIFIER_FIELDS},
             )
-            GamePlayer.objects.create(game=bye_game, user=bye_player, seat=0, finish_position=1)
+            GamePlayer.objects.bulk_create([
+                GamePlayer(game=game, user=player, seat=seat,
+                           display_name=getattr(player, 'display_name', '') or player.username)
+                for seat, player in enumerate(seating)
+            ])
+
+        # A single table is the final: whoever wins it wins the tournament.
+        return tables
+
+    def _advancing_from(self, game):
+        """The top `advance_per_table` of one table, best placing first."""
+        seats = (
+            GamePlayer.objects
+            .filter(game=game, finish_position__isnull=False)
+            .select_related('user')
+            .order_by('finish_position')
+        )
+        movers = [seat.user for seat in seats if seat.user_id is not None]
+        if not movers and game.winner_id is not None:
+            # A walkover has a winner but no placings.
+            movers = [game.winner]
+        return movers[:self.advance_per_table]
 
     def maybe_advance(self, finished_round):
-        round_games = self.games.filter(tournament_round=finished_round)
-        if round_games.filter(status__in=[GameStatus.PENDING, GameStatus.IN_PROGRESS]).exists():
+        round_games = list(self.games.filter(tournament_round=finished_round))
+        if any(g.status in (GameStatus.PENDING, GameStatus.IN_PROGRESS) for g in round_games):
             return
 
-        winners = [g.winner for g in round_games if g.winner_id is not None]
-        if len(winners) <= 1:
-            self.status = GameStatus.FINISHED
-            self.winner = winners[0] if winners else None
-            self.finished_at = timezone.now()
-            self.save(update_fields=['status', 'winner', 'finished_at'])
-        else:
-            self._start_round(finished_round + 1, winners)
+        # One table means that was the final.
+        if len(round_games) <= 1:
+            self._finish(round_games[0] if round_games else None)
+            return
+
+        movers = []
+        for game in round_games:
+            movers.extend(self._advancing_from(game))
+
+        if len(movers) <= 1:
+            self._finish(round_games[0] if round_games else None, winner=movers[0] if movers else None)
+            return
+
+        self._start_round(finished_round + 1, movers)
+
+    def _finish(self, final_game, winner=None):
+        """
+        Close the tournament and write the podium.
+
+        `final_position` is what `FinalResults` draws 1st, 2nd and 3rd from, and
+        nothing used to write it — the column existed, the serializer sent it,
+        and every value was null, so even a finished tournament showed no podium
+        at all. The places come from the final table's own finishing order.
+        """
+        if winner is None and final_game is not None:
+            winner = final_game.winner
+
+        if final_game is not None:
+            placings = (
+                GamePlayer.objects
+                .filter(game=final_game, finish_position__isnull=False)
+                .order_by('finish_position')
+                .values_list('user_id', 'finish_position')
+            )
+            by_user = {user_id: position for user_id, position in placings if user_id is not None}
+            if by_user:
+                entries = list(self.participants.filter(user_id__in=by_user))
+                for entry in entries:
+                    entry.final_position = by_user[entry.user_id]
+                TournamentParticipant.objects.bulk_update(entries, ['final_position'])
+            elif winner is not None:
+                self.participants.filter(user=winner).update(final_position=1)
+
+        self.status = GameStatus.FINISHED
+        self.winner = winner
+        self.finished_at = timezone.now()
+        self.save(update_fields=['status', 'winner', 'finished_at'])
 
     def __str__(self):
         return self.name

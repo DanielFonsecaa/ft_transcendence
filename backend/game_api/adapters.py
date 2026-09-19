@@ -1,3 +1,4 @@
+import logging
 import requests
 from allauth.account.adapter import DefaultAccountAdapter
 from allauth.core import context as allauth_context
@@ -10,6 +11,8 @@ from django.core.files.base import ContentFile
 
 from .background import run_in_background
 
+logger = logging.getLogger(__name__)
+
 class AccountAdapter(DefaultAccountAdapter):
 	def get_reset_password_from_key_url(self, key: str) -> str:
 		return f"{settings.FRONTEND_URL}/reset-password/{key}/"
@@ -19,8 +22,10 @@ class AccountAdapter(DefaultAccountAdapter):
 		return f"{settings.FRONTEND_URL}/oauth/callback"
 	def get_signup_redirect_url(self, request) -> str:
 		# A new Google/42 account (first-ever login) goes through allauth's
-		# signup redirect instead of the login one — same destination either way.
-		return f"{settings.FRONTEND_URL}/oauth/callback"
+		# signup redirect instead of the login one. The `first=1` tells the
+		# frontend this is the one login where the provider picture is still
+		# downloading, so it waits for it instead of storing the default.
+		return f"{settings.FRONTEND_URL}/oauth/callback?first=1"
 
 	def send_mail(self, template_prefix: str, email: str, context: dict) -> None:
 		# The context allauth would have built, except the send is handed to a
@@ -43,7 +48,10 @@ def _save_avatar_from_provider(user_pk, avatar_url: str) -> None:
 	try:
 		resp = requests.get(avatar_url, timeout=5)
 		resp.raise_for_status()
-	except requests.RequestException:
+	except requests.RequestException as exc:
+		# Returning silently here is why a missing picture used to look like a
+		# frontend bug: nothing anywhere said the download had failed.
+		logger.warning("Could not download the provider avatar %s: %s", avatar_url, exc)
 		return
 	user = get_user_model().objects.filter(pk=user_pk).first()
 	if user is None or user.avatar:

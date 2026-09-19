@@ -250,8 +250,9 @@ MEDIA_ROOT = env('DJANGO_MEDIA_ROOT', default=str(BASE_DIR / 'media'))
 
 
 # Background work
-# See game_api.background — threads, not a queue. Tests set this to False so
-# everything stays on one thread.
+# See game_api.background — threads, not a queue. On by default, including in
+# the tests: nothing overrides it, so a background task really does run on its
+# own thread there too. Turn it off to make every task synchronous.
 
 RUN_TASKS_IN_BACKGROUND = env.bool('DJANGO_RUN_TASKS_IN_BACKGROUND', default=True)
 
@@ -259,6 +260,11 @@ RUN_TASKS_IN_BACKGROUND = env.bool('DJANGO_RUN_TASKS_IN_BACKGROUND', default=Tru
 # host (or closes the room, if they were alone) — long enough to survive a
 # page refresh.
 GAME_DISCONNECT_GRACE_SECONDS = env.int('DJANGO_GAME_DISCONNECT_GRACE_SECONDS', default=10)
+
+# How many people may watch one room. A system limit, not a room setting: the
+# Create room dialog does not offer it, so there is no column for it either —
+# the lobby just reports it so the client does not have to keep its own copy.
+GAME_MAX_SPECTATORS = env.int('DJANGO_GAME_MAX_SPECTATORS', default=6)
 
 
 # Email
@@ -287,3 +293,46 @@ else:
 			'BACKEND': 'django.core.mail.backends.console.EmailBackend',
 		},
 	}
+
+# With DEBUG off, Django hands an unhandled exception to the `django.request`
+# logger and returns the plain 500 page. With no LOGGING configured that logger
+# has nowhere to write, so the traceback is built and then dropped: the response
+# says nothing and `docker compose logs backend` shows only uvicorn's access
+# lines. Sending it to the console works with DEBUG off too, which is the point:
+# in production DEBUG must stay off, and this is the only way a 500 there ever
+# explains itself.
+LOGGING = {
+	'version': 1,
+	'disable_existing_loggers': False,
+	'formatters': {
+		'verbose': {
+			'format': '[{asctime}] {levelname} {name}: {message}',
+			'style': '{',
+		},
+	},
+	'handlers': {
+		'console': {
+			'class': 'logging.StreamHandler',
+			'formatter': 'verbose',
+		},
+	},
+	'loggers': {
+		'django.request': {
+			'handlers': ['console'],
+			'level': 'ERROR',
+			'propagate': False,
+		},
+		# Our own code. Without an entry here these records reach the root
+		# logger, which has no handler, so Python's last-resort handler prints
+		# them bare to stderr — no timestamp, no logger name, and nothing below
+		# WARNING at all. That matters for the places that deliberately carry on
+		# after a failure, `game_api.spectators` above all: an unreachable Redis
+		# now degrades to a count of zero instead of a 500, and the log line is
+		# the only thing left that says so.
+		'game_api': {
+			'handlers': ['console'],
+			'level': 'INFO',
+			'propagate': False,
+		},
+	},
+}

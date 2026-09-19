@@ -1,17 +1,15 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, useLocation } from 'react-router'
-import Layout from '@/components/Layout.jsx'
-import ModalRoute from '@/components/ModalRoute.jsx'
+import { Navigate, Routes, Route } from 'react-router'
+import Layout from '@/components/layout/Layout.jsx'
+import RequireAuth from '@/components/layout/RequireAuth.jsx'
 
 // lazy() delays loading a page's code until it's actually needed.
 // "/" will not download NotFound's code until you access 404.
 const Home = lazy(() => import('@/pages/Home.jsx'))
 const Tournaments = lazy(() => import('@/pages/Tournaments.jsx'))
 const Profile = lazy(() => import('@/pages/Profile.jsx'))
-const Play = lazy(() => import('@/pages/Play.jsx'))
 const Room = lazy(() => import('@/pages/Room.jsx'))
 const TournamentDetail = lazy(() => import('@/pages/TournamentDetail.jsx'))
-const Rules = lazy(() => import('@/pages/Rules.jsx'))
 const Leaderboard = lazy(() => import('@/pages/Leaderboard.jsx'))
 const Login = lazy(() => import('@/pages/Login.jsx'))
 const Friends = lazy(() => import('@/pages/Friends.jsx'))
@@ -21,75 +19,47 @@ const PrivacyPolicy = lazy(() => import('@/pages/PrivacyPolicy.jsx'))
 const TermsOfService = lazy(() => import('@/pages/TermsOfService.jsx'))
 const NotFound = lazy(() => import('@/pages/NotFound.jsx'))
 
-// Dev-only playground at /dev/table: the game table drawn from fake game states.
-// Vite replaces `import.meta.env.DEV` with `true` under `vite` (npm run dev) and
-// `false` under `vite build`, so a production build turns this into `null` and
-// drops the import — the page and the fake data never reach the bundle.
-// Checking only in the <Route> below wouldn't be enough: the import would stay.
+// Dev-only playgrounds. Vite replaces `import.meta.env.DEV` with `true` under
+// `vite` (npm run dev) and `false` under `vite build`, so a production build
+// turns these into `null` and drops the imports — the pages and the fake data
+// never reach the bundle. Checking only in the <Route> below wouldn't be
+// enough: the import would stay.
 const TablePlayground = import.meta.env.DEV ? lazy(() => import('@/pages/dev/TablePlayground.jsx')) : null
-
-// Pages that can also be shown as a popup. Reached normally (e.g. typing the URL
-// or refreshing) they render full-page; reached from a link that carries a
-// `background` location they render as a modal over that background page.
-const MODAL_ROUTES = [
-	{ path: '/profile', title: 'Profile', element: <Profile /> },
-	{ path: '/tournament', title: 'Tournaments', element: <Tournaments /> },
-	{ path: '/leaderboard', title: 'Leaderboard', element: <Leaderboard /> },
-	{ path: '/play', title: 'Play', element: <Play /> },
-	{ path: '/friends', title: 'Friends', element: <Friends /> },
-]
+const UiPlayground = import.meta.env.DEV ? lazy(() => import('@/pages/dev/UiPlayground.jsx')) : null
 
 function AppRoutes() {
-	const location = useLocation()
-	// A <Link> can pass `state={{ background: location }}`. When it does, we keep
-	// rendering the page at that background location and stack the link's real
-	// target on top as a modal.
-	const background = location.state && location.state.background
-
 	return (
 		// Because pages load lazily, there's a brief moment with nothing to show
 		// Suspense catches that and render `fallback` until the lazy resolve.
 		<Suspense fallback={<div>Loading…</div>}>
-			<Routes location={background || location}>
+			<Routes>
 				<Route element={<Layout />}>
 					<Route path="/" element={<Home />} />
 					<Route path="/tournament" element={<Tournaments />} />
-					<Route path="/profile" element={<Profile />} />
 					<Route path="/leaderboard" element={<Leaderboard />} />
-					<Route path="/play" element={<Play />} />
-					{/* A room is always a full page (has its own id in the URL to
-					    share), never a stacked modal — so it's not in MODAL_ROUTES. */}
-					<Route path="/room/:id" element={<Room />} />
-					{/* Same reasoning: a tournament has its own id in the URL to share,
-					    so it's always a full page, never a stacked modal. */}
+					{/* Home is the hub now: these two are sections of it. */}
+					<Route path="/play" element={<Navigate to="/#rooms" replace />} />
 					<Route path="/tournament/:id" element={<TournamentDetail />} />
-					{/* Rules is long-form reading — always a full page, never a modal. */}
-					<Route path="/rules" element={<Rules />} />
+					<Route path="/rules" element={<Navigate to="/#howtoplay" replace />} />
 					<Route path="/login" element={<Login />} />
-					<Route path="/friends" element={<Friends />} />
 					<Route path="/register" element={<Register />} />
+					{/* Signed out, these bounce to the Login and come back after it. */}
+					<Route path="/friends" element={<RequireAuth><Friends /></RequireAuth>} />
+					<Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
 					<Route path="/oauth/callback" element={<OAuthCallback />} />
 					<Route path="/privacy-policy" element={<PrivacyPolicy />} />
 					<Route path="/terms-of-service" element={<TermsOfService />} />
-					{/* Dev only: `TablePlayground` is null in a production build, so this route doesn't exist there. */}
-					{TablePlayground && <Route path="/dev/table" element={<TablePlayground />} />}
+					{/* Dev only: null in a production build, so the route doesn't exist there. */}
+					{UiPlayground && <Route path="/dev/ui" element={<UiPlayground />} />}
 					<Route path="*" element={<NotFound />} />
 				</Route>
+				{/* Outside Layout on purpose: the room draws its own frame, because the
+				    game table has a slim header of its own and no footer at all. The
+				    playground does the same so it previews the real thing. */}
+				<Route path="/room/:id" element={<Room />} />
+				{/* Dev only: null in a production build, so the route doesn't exist there. */}
+				{TablePlayground && <Route path="/dev/table" element={<TablePlayground />} />}
 			</Routes>
-
-			{/* Only mounted when we arrived with a background location, so the
-			    modal is layered on top of the page instead of replacing it. */}
-			{background && (
-				<Routes>
-					{MODAL_ROUTES.map(({ path, title, element }) => (
-						<Route
-							key={path}
-							path={path}
-							element={<ModalRoute title={title}>{element}</ModalRoute>}
-						/>
-					))}
-				</Routes>
-			)}
 		</Suspense>
 	)
 }

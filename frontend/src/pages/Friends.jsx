@@ -1,67 +1,34 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
-import api from "@/lib/api.js"
+import { useCallback, useEffect, useState } from "react"
+import AddFriendForm from "@/components/friends/AddFriendForm.jsx"
+import FriendRow from "@/components/friends/FriendRow.jsx"
+import FriendSection from "@/components/friends/FriendSection.jsx"
+import Button from "@/components/ui/Button.jsx"
+import PageHeader from "@/components/ui/PageHeader.jsx"
+import { ErrorMessage, Loading } from "@/components/ui/Message.jsx"
+import { acceptRequest, blockUser, declineRequest, groupFriendships, listFriendships, removeFriendship } from "@/lib/friends.js"
+import { useChat } from "@/components/chat/ChatProvider.jsx"
 import { useAuth } from "@/lib/auth.jsx"
 
-const inputClass = "rounded-lg border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-white/40"
-const actionButton = "rounded-lg border border-white/30 px-3 py-1 text-sm transition-transform hover:scale-105 cursor-pointer disabled:opacity-40 disabled:hover:scale-100"
-
-function PersonRow({ person, children }) {
-	return (
-		<li className="flex items-center gap-3 rounded-xl border border-white/15 bg-black px-4 py-2.5">
-			<img
-			src={person.avatar_url}
-			alt=""
-			className="h-9 w-9 shrink-0 rounded-full border border-white/20 object-cover"
-			/>
-			<span className="min-w-0 flex-1">
-				<span className="block truncate font-bold leading-tight">
-					{person.display_name || person.username}
-				</span>
-				<span className="flex items-center gap-1.5 text-xs text-white/50">
-					<span
-						aria-hidden="true"
-						className={`inline-block h-2 w-2 rounded-full ${
-							person.is_online ? "bg-green" : "bg-white/30"
-						}`}
-					/>
-					{person.is_online ? "Online" : "Offline"}
-				</span>
-			</span>
-			<span className="flex shrink-0 gap-2">{children}</span>
-		</li>
-	)
-}
-
-function FriendsSection({ title, count, empty, children }) {
-	return (
-		<section className="mb-6">
-			<h3 className="mb-2 text-sm uppercase tracking-[0.15em] text-white/50">
-				{title} {count > 0 && <span className="text-white">({count})</span>}
-			</h3>
-			{count === 0 ? (
-				<p className="text-sm text-white/50">{empty}</p>
-			) : (
-				<ul className="space-y-2">{children}</ul>
-			)}
-		</section>
-	)
-}
+const ACTION = "px-4 py-2.5 text-sm"
 
 function Friends() {
 	const { user } = useAuth()
+	// Bumped whenever the presence socket says a friendship changed, so a request
+	// that arrives while this page is open lands in the list instead of only on
+	// the header's badge.
+	const { friendshipVersion } = useChat()
 
+	// Only the server's answer is kept. The four groups are worked out on every
+	// render instead of being stored, so they can never disagree with `rows`.
 	const [rows, setRows] = useState([])
+	// One status instead of separate booleans: "loading and failed" can't happen.
 	const [status, setStatus] = useState("loading")
 	const [error, setError] = useState("")
-
-	const [username, setUsername] = useState("")
-	const [formError, setFormError] = useState("")
-	const [adding, setAdding] = useState(false)
 	const [busyId, setBusyId] = useState(null)
 
 	const load = useCallback(async () => {
 		try {
-			const data = await api.get("/friendships/")
+			const data = await listFriendships()
 			setRows(Array.isArray(data) ? data : (data.results ?? []))
 			setStatus("ready")
 		} catch (err) {
@@ -71,187 +38,146 @@ function Friends() {
 	}, [])
 
 	useEffect(() => {
-		load()
-	}, [load])
+		// Wrapped in an async call so nothing sets state while the effect body is
+		// still running: the state changes happen after the request resolves.
+		void (async () => {
+			await load()
+		})()
+	}, [load, friendshipVersion])
 
-	const { friends, incoming, outgoing, blocked } = useMemo(() => {
-		const me = user?.public_id
-		const friends = []
-		const incoming = []
-		const outgoing = []
-		const blocked = []
-
-		for (const row of rows) {
-			const iAmRequester = row.requester?.public_id === me
-			const other = iAmRequester ? row.addressee : row.requester
-
-			if (row.status === "accepted") friends.push({ id: row.id, person: other})
-			else if (row.status === "pending" && iAmRequester) outgoing.push({ id: row.id, person: other})
-			else if (row.status === "pending") incoming.push({ id: row.id, person: other})
-			else if (row.status === "blocked" && iAmRequester) blocked.push({ id: row.id, person: other})
-		}
-		return { friends, incoming, outgoing, blocked }
-	}, [rows, user?.public_id])
-
+	// Every button follows the same shape: lock the row, run it, reload, unlock.
 	const act = async (id, run) => {
 		setBusyId(id)
-		setFormError("")
+		setError("")
 		try {
 			await run()
 			await load()
 		} catch (err) {
-			setFormError(err.message)
+			setError(err.message)
 		} finally {
 			setBusyId(null)
 		}
 	}
 
-	const addFriend = async (e) => {
-		e.preventDefault()
-		const name = username.trim()
-		if (!name) return
+	const { incoming, friends, sent, blocked } = groupFriendships(rows, user?.public_id)
 
-		setAdding(true)
-		setFormError("")
-		try {
-			await api.post("/friendships/", { username: name })
-			setUsername("")
-			await load()
-		} catch (err) {
-			setFormError(err.message)
-		} finally {
-			setAdding(false)
-		}
-	}
+	const requests = (
+		<FriendSection
+			key="requests"
+			title="Requests"
+			accent="yellow"
+			count={incoming.length}
+			empty="No pending requests."
+		>
+			{incoming.map(({ id, person }) => (
+				<FriendRow key={id} person={person} accent="yellow" busy={busyId === id}>
+					<Button
+						variant="outline"
+						color="green"
+						disabled={busyId === id}
+						onClick={() => act(id, () => acceptRequest(id))}
+						className={ACTION}
+					>
+						Accept
+					</Button>
+					<Button
+						variant="small"
+						disabled={busyId === id}
+						onClick={() => act(id, () => declineRequest(id))}
+						className={ACTION}
+					>
+						Decline
+					</Button>
+				</FriendRow>
+			))}
+		</FriendSection>
+	)
+
+	const yours = (
+		<FriendSection
+			key="friends"
+			title="Your friends"
+			accent="green"
+			count={friends.length}
+			empty="No friends yet - add someone above."
+		>
+			{/* The only section with live actions, so the only one where Remove and
+			    Block move into the ⋮ — see FriendRow. */}
+			{friends.map(({ id, person }) => (
+				<FriendRow
+					key={id}
+					person={person}
+					accent="green"
+					busy={busyId === id}
+					chatWith={person.username}
+					menu={[
+						{ label: "Remove friend", color: "dim", onClick: () => act(id, () => removeFriendship(id)) },
+						{ label: "Block", color: "red", onClick: () => act(id, () => blockUser(person.username)) },
+					]}
+				/>
+			))}
+		</FriendSection>
+	)
+
+	const sentSection = (
+		<FriendSection key="sent" title="Sent" accent="blue" count={sent.length} empty="Nothing waiting.">
+			{sent.map(({ id, person }) => (
+				<FriendRow key={id} person={person} accent="blue" busy={busyId === id}>
+					<Button
+						variant="small"
+						disabled={busyId === id}
+						onClick={() => act(id, () => removeFriendship(id))}
+						className={ACTION}
+					>
+						Cancel
+					</Button>
+				</FriendRow>
+			))}
+		</FriendSection>
+	)
 
 	return (
-		<section className="mx-auto w-[min(88vw,720px)] py-2 text-white">
-			<h2 className="mb-4 text-2xl font-bold">Friends</h2>
+		<div className="mx-auto flex w-full max-w-[900px] flex-col gap-7 px-[clamp(16px,4vw,24px)] pb-[clamp(48px,8vw,88px)] pt-[clamp(28px,6vw,56px)]">
+			<PageHeader
+				eyebrow="FRIENDS"
+				title="Friends"
+				count={status === "ready" ? `${friends.length} FRIENDS · ${incoming.length} PENDING` : undefined}
+			/>
 
-			<form onSubmit={addFriend} className="mb-4 flex gap-2">
-				<label htmlFor="add-friend" className="sr-only">
-					Username
-				</label>
-				<input
-					id="add-friend"
-					type="text"
-					value={username}
-					onChange={(e) => setUsername(e.target.value)}
-					placeholder="Add someone by username"
-					className={`${inputClass} flex-1`}
-				/>
-				<button
-					type="submit"
-					disabled={adding || !username.trim()}
-					className={actionButton}
-				>
-					{adding ? "Sending..." : "Send request"}
-				</button>
-			</form>
+			<AddFriendForm onSent={load} />
 
-			{formError && (
-				<p role="alert" className="mb-4 text-sm text-red-400">
-					{formError}
-				</p>
-			)}
+			{error && status === "ready" && <ErrorMessage>{error}</ErrorMessage>}
 
-			{status === "loading" && <p className="text-white/50">Loading...</p>}
+			{status === "loading" && <Loading className="py-12 text-center">Loading...</Loading>}
 
 			{status === "error" && (
-				<p role="alert" className="text-red-400">
-					Couldn't load your friends. {error}
-				</p>
+				<ErrorMessage className="py-12 text-center">Couldn't load your friends. {error}</ErrorMessage>
 			)}
 
 			{status === "ready" && (
-				<>
-					<FriendsSection title="Requests" count={incoming.length} empty="No pending requests.">
-						{incoming.map(({ id, person }) => (
-							<PersonRow key={id} person={person}>
-								<button
-									type="button"
-									disabled={busyId === id}
-									onClick={() => act(id, () => api.post(`/friendships/${id}/accept/`))}
-									className={actionButton}
-								>
-									Accept
-								</button>
-								<button
-									type="button"
-									disabled={busyId === id}
-									onClick={() => act(id, () => api.post(`/friendships/${id}/decline/`))}
-									className={actionButton}
-								>
-									Decline
-								</button>
-							</PersonRow>
-						))}
-					</FriendsSection>
-
-					<FriendsSection
-						title="Your friends"
-						count={friends.length}
-						empty="No friends yet - add someone above."
-					>
-						{friends.map(({ id, person }) => (
-							<PersonRow key={id} person={person}>
-								<button
-									type="button"
-									disabled={busyId === id}
-									onClick={() => act(id, () => api.delete(`/friendships/${id}/`))}
-									className={actionButton}
-								>
-									Remove
-								</button>
-
-								<button
-									type="button"
-									disabled={busyId === id}
-									onClick={() =>
-										act(id, () => api.post("/friendships/block/", { username: person.username }))
-									}
-									className={actionButton}
-								>
-									Block
-								</button>
-							</PersonRow>
-						))}
-					</FriendsSection>
-
-					<FriendsSection title="Sent" count={outgoing.length} empty="Nothing waiting.">
-						{outgoing.map(({ id, person }) => (
-							<PersonRow key={id} person={person}>
-								<button
-									type="button"
-									disabled={busyId === id}
-									onClick={() => act(id, () => api.delete(`/friendships/${id}/`))}
-									className={actionButton}
-								>
-									Cancel
-								</button>
-							</PersonRow>
-						))}
-					</FriendsSection>
+				<div className="flex flex-col gap-8">
+					{/* Waiting requests come first: they are the thing to act on. */}
+					{incoming.length > 0 ? [requests, yours, sentSection] : [yours, requests, sentSection]}
 
 					{blocked.length > 0 && (
-						<FriendsSection title="Blocked" count={blocked.length} empty="">
+						<FriendSection title="Blocked" accent="red" count={blocked.length} empty="Nobody blocked.">
 							{blocked.map(({ id, person }) => (
-								<PersonRow key={id} person={person}>
-									<button
-										type="button"
+								<FriendRow key={id} person={person} accent="red" busy={busyId === id}>
+									<Button
+										variant="small"
 										disabled={busyId === id}
-										onClick={() => act(id, () => api.delete(`/friendships/${id}/`))}
-										className={actionButton}
+										onClick={() => act(id, () => removeFriendship(id))}
+										className={ACTION}
 									>
 										Unblock
-									</button>
-								</PersonRow>
+									</Button>
+								</FriendRow>
 							))}
-						</FriendsSection>
+						</FriendSection>
 					)}
-				</>
+				</div>
 			)}
-		</section>
+		</div>
 	)
 }
 

@@ -229,11 +229,32 @@ class GameInviteTests(TransactionTestCase):
 		await alice_comm.disconnect()
 		await bob_comm.disconnect()
 
-	async def test_inviting_to_an_already_started_game_is_rejected(self):
+	async def test_a_game_already_under_way_can_still_be_invited_to(self):
+		# A room outlives its game (CONTEXT.md), so an invite points at somewhere
+		# to go, not only at a game yet to start. This used to be refused, which
+		# is why the Game Table's invite button — where the design puts one —
+		# could never be pressed.
 		alice = await sync_to_async(User.objects.create_user)(username="alice", email="a@example.com", password="x")
 		bob = await sync_to_async(User.objects.create_user)(username="bob", email="b@example.com", password="x")
 		game = await sync_to_async(Game.objects.create)(
 			host=alice, max_seats=4, starting_hand_size=7, status=GameStatus.IN_PROGRESS
+		)
+
+		communicator, _ = await _connect_chat_as(alice)
+		await communicator.send_json_to({
+			"action": "send_game_invite", "recipient_id": str(bob.public_id), "game_id": str(game.public_id),
+		})
+		response = await communicator.receive_json_from()
+		self.assertNotEqual(response["type"], "error")
+
+		await communicator.disconnect()
+
+	async def test_inviting_to_a_finished_game_is_rejected(self):
+		# The one room there is no point being sent to.
+		alice = await sync_to_async(User.objects.create_user)(username="alice", email="a@example.com", password="x")
+		bob = await sync_to_async(User.objects.create_user)(username="bob", email="b@example.com", password="x")
+		game = await sync_to_async(Game.objects.create)(
+			host=alice, max_seats=4, starting_hand_size=7, status=GameStatus.FINISHED
 		)
 
 		communicator, _ = await _connect_chat_as(alice)

@@ -39,13 +39,29 @@ class ListTournamentTests(TournamentTestCase):
 		response = self.client.get(reverse("tournament-list"))
 		self.assertEqual(len(response.data), 1)
 
-	def test_does_not_list_a_started_tournament(self):
+	def test_lists_tournaments_of_every_status(self):
+		# It used to answer only PENDING ones, which emptied the list's three
+		# other statuses, hid the podium of a finished tournament, and meant
+		# Home's LIVE TOURNAMENT banner — which looks for an in_progress one —
+		# could never appear again, with nothing anywhere to say why.
 		Tournament.objects.create(
-			name="Cup", created_by=self.alice, max_participants=8, status=GameStatus.IN_PROGRESS
+			name="Running", created_by=self.alice, max_participants=8, status=GameStatus.IN_PROGRESS
+		)
+		Tournament.objects.create(
+			name="Done", created_by=self.alice, max_participants=8, status=GameStatus.FINISHED
 		)
 		self.login(self.bob)
 		response = self.client.get(reverse("tournament-list"))
-		self.assertEqual(len(response.data), 0)
+		statuses = {row["status"] for row in response.data}
+		self.assertIn(GameStatus.IN_PROGRESS, statuses)
+		self.assertIn(GameStatus.FINISHED, statuses)
+
+	def test_every_row_carries_a_short_code_that_can_be_read_out(self):
+		self.login(self.bob)
+		response = self.client.get(reverse("tournament-list"))
+		for row in response.data:
+			self.assertEqual(len(row["id"]), 4)
+			self.assertTrue(row["id"].isalnum())
 
 
 class RegisterTests(TournamentTestCase):
@@ -83,7 +99,11 @@ class RegisterTests(TournamentTestCase):
 	def test_can_unregister_before_starting(self):
 		self.login(self.alice)
 		response = self.client.post(reverse("tournament-unregister", args=[self.tournament.public_id]))
-		self.assertEqual(response.status_code, 204)
+		# Answers with the tournament, like register, start and create. A bare
+		# 204 forced the page into a second request to learn what it had just
+		# done, and left a window where the roster on screen was known wrong.
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data["participant_count"], 0)
 		self.assertFalse(
 			TournamentParticipant.objects.filter(tournament=self.tournament, user=self.alice).exists()
 		)

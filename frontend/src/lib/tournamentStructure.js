@@ -4,10 +4,11 @@ import { defaultRoomSettings } from './rooms.js'
 // expects on POST /api/tournaments/, so the object goes over unchanged with no
 // mapping step — the same rule `rooms.js` follows for game rooms.
 //
-// `max_participants`, `starting_hand_size`, `turn_timer_seconds` and the five
-// modifier flags already exist on the backend. The table-shape keys
-// (`players_per_table`, `advance_per_table`, the best-of ones) are part 2 of
-// TOURNAMENT_REQUEST.md and are not accepted yet.
+// Every key here is a real column since §5, the table-shape ones included
+// (`players_per_table`, `advance_per_table`, the best-of pair). The server
+// mirrors `computeStructure` below in `Tournament.tables_for` and refuses a
+// shape that never reduces to one final table, so the preview a host is shown
+// and the tournament they get are worked out the same way.
 
 export const FORMATS = {
 	knockout: {
@@ -45,7 +46,7 @@ export function makeDefaultConfig(format = 'knockout') {
 		starting_hand_size: 7,
 		turn_timer_seconds: 30,
 		// Flat, not nested: the backend takes these as top-level fields, and
-		// enabledHouseRuleLabels() reads the config object directly.
+		// enabledRuleLabels() (lib/rooms.js) reads the config object directly.
 		draw_stacking,
 		jump_in,
 		draw_until_playable,

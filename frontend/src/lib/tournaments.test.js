@@ -1,38 +1,28 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
-import { MODIFIER_TOGGLES } from "./rooms.js"
-import { makeDefaultConfig } from "./tournamentStructure.js"
-import { enabledHouseRuleLabels, formatDate, makeTournamentId, STATUS_COLORS, STATUS_LABELS } from "./tournaments.js"
+import { describe, expect, it, vi } from "vitest"
+import {
+	createTournament,
+	finalStandings,
+	formatDate,
+	getTournament,
+	isEntered,
+	joinTournament,
+	leaveTournament,
+	listTournaments,
+	startTournament,
+	STATUS_ACCENTS,
+	STATUS_COLORS,
+	STATUS_LABELS,
+} from "./tournaments.js"
+import { api } from "./api.js"
 
-describe("makeTournamentId", () => {
-	afterEach(() => {
-		vi.restoreAllMocks()
-	})
+// The in-memory store this file used to exercise is gone: §5 landed, and the six
+// functions below are real calls now. What is left to test here is what is still
+// ours to get wrong — the pure helpers the screens share, and the addresses the
+// six calls go to.
 
-	it("is four characters by default", () => {
-		expect(makeTournamentId()).toHaveLength(4)
-	})
-
-	it("has the requested length", () => {
-		for (const length of [0, 1, 6, 12]) expect(makeTournamentId(length)).toHaveLength(length)
-	})
-
-	// People read these codes out loud and type them in. That's the whole reason
-	// the alphabet leaves out I, O, 0 and 1.
-	it("never uses I, O, 0 or 1", () => {
-		const ids = Array.from({ length: 500 }, () => makeTournamentId(8)).join("")
-		expect(ids).toMatch(/^[A-HJ-NP-Z2-9]+$/)
-	})
-
-	// Math.random lands anywhere in [0, 1). Pin both ends so an off-by-one can't
-	// index past the alphabet and put "undefined" into a code.
-	it("stays inside the alphabet at both ends of Math.random", () => {
-		const random = vi.spyOn(Math, "random").mockReturnValue(0)
-		expect(makeTournamentId(3)).toBe("AAA")
-
-		random.mockReturnValue(0.999999)
-		expect(makeTournamentId(3)).toBe("999")
-	})
-})
+vi.mock("./api.js", () => ({
+	api: { get: vi.fn(() => Promise.resolve({})), post: vi.fn(() => Promise.resolve({})) },
+}))
 
 describe("formatDate", () => {
 	// Midday UTC, so the date is the same in whatever timezone this runs in.
@@ -41,33 +31,107 @@ describe("formatDate", () => {
 	})
 })
 
-describe("enabledHouseRuleLabels", () => {
-	it("returns an empty list for a default tournament", () => {
-		expect(enabledHouseRuleLabels(makeDefaultConfig())).toEqual([])
-	})
-
-	it("returns only the enabled labels, in toggle order", () => {
-		const config = { ...makeDefaultConfig(), seven_swap: true, draw_stacking: true }
-		expect(enabledHouseRuleLabels(config)).toEqual(["Stacking draw cards", "Seven swap"])
-	})
-
-	// A tournament config is full of truthy fields that aren't house rules.
-	it("ignores keys that are not house rules", () => {
-		expect(enabledHouseRuleLabels({ name: "Friday Cup", max_participants: 20, final_best_of_3: true })).toEqual([])
-	})
-
-	it("survives an undefined argument", () => {
-		expect(enabledHouseRuleLabels()).toEqual([])
-	})
-
-	it("offers the same house rules as a room", () => {
-		const everyRule = Object.fromEntries(MODIFIER_TOGGLES.map(({ key }) => [key, true]))
-		expect(enabledHouseRuleLabels(everyRule)).toEqual(MODIFIER_TOGGLES.map(({ label }) => label))
-	})
-})
-
 describe("STATUS_COLORS", () => {
 	it("has a colour for exactly the statuses that have a label", () => {
 		expect(Object.keys(STATUS_COLORS).sort()).toEqual(Object.keys(STATUS_LABELS).sort())
+	})
+})
+
+describe("finalStandings", () => {
+	// Pure: the podium is derived from `final_position`, the field the backend
+	// already has for it, rather than a separate list of names that could
+	// disagree with the roster drawn beside it.
+	const entry = (username, final_position) => ({ user: { username }, final_position })
+
+	it("puts the three places in order", () => {
+		const tournament = { participants: [entry("ana", 1), entry("pedro", 2), entry("lucas", 3)] }
+		expect(finalStandings(tournament).map((e) => e.user.username)).toEqual(["ana", "pedro", "lucas"])
+	})
+
+	it("reads the order from final_position, not from the roster order", () => {
+		const tournament = { participants: [entry("lucas", 3), entry("ana", 1), entry("pedro", 2)] }
+		expect(finalStandings(tournament).map((e) => e.final_position)).toEqual([1, 2, 3])
+	})
+
+	it("is empty while nobody has finished", () => {
+		const tournament = { participants: [entry("ana", null), entry("pedro", null)] }
+		expect(finalStandings(tournament)).toEqual([])
+	})
+
+	it("survives a tournament with no participants at all", () => {
+		expect(finalStandings({})).toEqual([])
+		expect(finalStandings(null)).toEqual([])
+	})
+
+	it("never shows more than three", () => {
+		const tournament = {
+			participants: [1, 2, 3, 4, 5].map((n) => entry(`p${n}`, n)),
+		}
+		expect(finalStandings(tournament)).toHaveLength(3)
+	})
+})
+
+describe("STATUS_ACCENTS", () => {
+	it("has a card stripe for exactly the statuses that have a label", () => {
+		expect(Object.keys(STATUS_ACCENTS).sort()).toEqual(Object.keys(STATUS_LABELS).sort())
+	})
+})
+
+
+describe("isEntered", () => {
+	const tournament = { participants: [{ user: { username: "daniel" } }, { user: { username: "rita_c" } }] }
+
+	it("finds somebody on the roster", () => {
+		expect(isEntered(tournament, "rita_c")).toBe(true)
+	})
+
+	it("does not invent a place for somebody who is not", () => {
+		expect(isEntered(tournament, "stranger")).toBe(false)
+	})
+
+	it("says no for a guest, who has no name to look for", () => {
+		expect(isEntered(tournament, undefined)).toBe(false)
+	})
+
+	it("survives a tournament with no roster loaded yet", () => {
+		expect(isEntered({}, "daniel")).toBe(false)
+		expect(isEntered(null, "daniel")).toBe(false)
+	})
+})
+
+describe("the API calls", () => {
+	// A tournament is addressed by its short code, which is what the badge shows
+	// and what /tournament/:id carries.
+	it("reads the list and one tournament", () => {
+		listTournaments()
+		expect(api.get).toHaveBeenCalledWith("/tournaments/")
+
+		getTournament("8K2P")
+		expect(api.get).toHaveBeenCalledWith("/tournaments/8K2P/")
+	})
+
+	it("sends the config over unchanged, because its keys are the backend's", () => {
+		const config = { name: "Friday", max_participants: 20, players_per_table: 5, jump_in: true }
+		createTournament(config)
+		expect(api.post).toHaveBeenCalledWith("/tournaments/", config)
+	})
+
+	it("joins, leaves and starts by code", () => {
+		joinTournament("8K2P")
+		expect(api.post).toHaveBeenCalledWith("/tournaments/8K2P/register/", {})
+
+		leaveTournament("8K2P")
+		expect(api.post).toHaveBeenCalledWith("/tournaments/8K2P/unregister/", {})
+
+		startTournament("8K2P")
+		expect(api.post).toHaveBeenCalledWith("/tournaments/8K2P/start/", {})
+	})
+})
+
+describe("STATUS_LABELS", () => {
+	it("speaks the backend's GameStatus, not a vocabulary of its own", () => {
+		expect(Object.keys(STATUS_LABELS).sort()).toEqual(
+			["cancelled", "finished", "in_progress", "pending"].sort(),
+		)
 	})
 })
